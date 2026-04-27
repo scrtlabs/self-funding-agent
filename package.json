@@ -1,0 +1,43 @@
+{
+  "name": "self-funding-agent",
+  "version": "1.0.0",
+  "description": "Autonomous self-funding AI agent for Secret Network",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/scrtlabs/secretai-devportal.git",
+    "directory": "examples/chatbot-marketplace"
+  },
+  "homepage": "https://github.com/scrtlabs/secretai-devportal/tree/main/examples/chatbot-marketplace",
+  "bugs": {
+    "url": "https://github.com/scrtlabs/secretai-devportal/issues"
+  },
+  "type": "module",
+  "main": "funding-agent.js",
+  "scripts": {
+    "start": "node funding-agent.js",
+    "dev": "node --watch funding-agent.js",
+    "deploy": "./deploy.sh"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0",
+    "node-fetch": "^3.3.2",
+    "express": "^4.18.2"
+  },
+  "keywords": [
+    "autonomous-agent",
+    "self-funding",
+    "ai-agent",
+    "secret-network",
+    "blockchain",
+    "web3",
+    "tee",
+    "confidential-computing",
+    "ethereum",
+    "base-network"
+  ],
+  "author": "Secret Network",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  funding-agent:
+    image: ghcr.io/scrtlabs/self-funding-agent:latest
+    ports:
+      - "3002:3002"
+    environment:
+      # VM Configuration (REQUIRED - passed as secret)
+      - VM_ID=${VM_ID}
+      
+      # Wallet Security (REQUIRED - unique per VM)
+      - VM_SECRET=${VM_SECRET}
+      
+      # Agent Configuration
+      - FUNDING_AGENT_PORT=3002
+      - FUNDING_AGENT_MIN_BALANCE_USD=0.5
+      - FUNDING_AGENT_TOPUP_USD=5
+      - FUNDING_AGENT_CHECK_INTERVAL_MS=60000
+      - FUNDING_AGENT_BASE_URL=https://preview-aidev.scrtlabs.com/
+      - FUNDING_AGENT_CHAIN_RPC_URL=https://mainnet.base.org
+      
+      # Wallet Storage Path (persistent volume)
+      - WALLET_STORAGE_PATH=/data/agent-wallet.json
+    
+    volumes:
+      # Persistent storage for wallet
+      - agent-data:/data
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  agent-data:
+    driver: local

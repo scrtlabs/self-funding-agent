@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>💚 Funding Agent - Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 32px;
+      color: #333;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: #666;
+      font-size: 16px;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+
+    .status-badge.operational {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-badge.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 768px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .stat-item {
+      background: #f9fafb;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .wallet-info {
+      background: #fef3c7;
+      border: 2px solid #fbbf24;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+    }
+
+    .wallet-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #92400e;
+      margin-bottom: 8px;
+    }
+
+    .wallet-address {
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      word-break: break-all;
+      background: white;
+      padding: 12px;
+      border-radius: 6px;
+      color: #1f2937;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .wallet-address:hover {
+      background: #f3f4f6;
+    }
+
+    .chat-container {
+      height: 400px;
+      overflow-y: auto;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .message {
+      margin-bottom: 16px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .message-header {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #6b7280;
+    }
+
+    .message-content {
+      background: white;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .message.user .message-content {
+      background: #dbeafe;
+      border-color: #3b82f6;
+      margin-left: 20%;
+    }
+
+    .message.agent .message-content {
+      background: #d1fae5;
+      border-color: #10b981;
+      margin-right: 20%;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    button {
+      padding: 12px 24px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #5568d3;
+    }
+
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .quick-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .quick-btn {
+      padding: 8px 16px;
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .quick-btn:hover {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+    }
+
+    .health-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .health-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    .health-dot.online {
+      background: #10b981;
+    }
+
+    .health-dot.offline {
+      background: #ef4444;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .copy-btn {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 4px 8px;
+      background: #667eea;
+      color: white;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #5568d3;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #1f2937;
+      color: white;
+      padding: 16px 24px;
+      border-radius: 8px;
+      box-shadow: 0 10px 15px rgba(0,0,0,0.3);
+      display: none;
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from {
+        transform: translateY(100px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .toast.show {
+      display: block;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #6b7280;
+    }
+
+    .spinner {
+      border: 3px solid #f3f4f6;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>💚 Funding Agent Dashboard</h1>
+      <p>Autonomous AI Agent - Community Supported</p>
+      <div class="status-badge operational" id="statusBadge">
+        <span id="statusText">Connecting...</span>
+      </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="grid">
+      <!-- Left Column: Chat -->
+      <div class="card">
+        <div class="card-title">
+          💬 Chat with Agent
+        </div>
+        
+        <div class="chat-container" id="chatContainer">
+          <div class="loading">
+            <div class="spinner"></div>
+            <div>Connecting to agent...</div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <input 
+            type="text" 
+            id="messageInput" 
+            placeholder="Type a message..."
+            onkeypress="handleKeyPress(event)"
+          >
+          <button onclick="sendMessage()" id="sendBtn">Send</button>
+        </div>
+
+        <div class="quick-actions">
+          <button class="quick-btn" onclick="quickMessage('donate')">💰 Support</button>
+          <button class="quick-btn" onclick="quickMessage('balance')">📊 Status</button>
+          <button class="quick-btn" onclick="quickMessage('mission')">📖 Mission</button>
+          <button class="quick-btn" onclick="quickMessage('help')">❓ Help</button>
+        </div>
+      </div>
+
+      <!-- Right Column: Stats & Health -->
+      <div>
+        <!-- Health Status -->
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-title">
+            🏥 Health Status
+          </div>
+          
+          <div class="health-indicator">
+            <div class="health-dot online" id="healthDot"></div>
+            <div>
+              <div style="font-weight: 600; color: #111827;" id="healthStatus">Operational</div>
+              <div style="font-size: 12px; color: #6b7280;" id="healthMessage">All systems running</div>
+            </div>
+          </div>
+
+          <div class="wallet-info">
+            <div class="wallet-label">
+              💰 SUPPORT WALLET
+              <span class="copy-btn" onclick="copyWallet()">Copy</span>
+            </div>
+            <div class="wallet-address" id="walletAddress" onclick="copyWallet()">
+              Loading...
+            </div>
+          </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="card">
+          <div class="card-title">
+            📊 Statistics
+          </div>
+          
+          <div class="stats-grid">
+            <div class="stat-item">
+              <div class="stat-label">Total Requests</div>
+              <div class="stat-value" id="statRequests">0</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Donations</div>
+              <div class="stat-value" id="statDonations">0</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Total Funded</div>
+              <div class="stat-value">$<span id="statTotal">0.00</span></div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Uptime</div>
+              <div class="stat-value" id="statUptime">0m</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API_BASE = 'http://localhost:3002';
+    let isConnected = false;
+
+    // Initialize
+    async function init() {
+      await checkHealth();
+      await loadInitialMessage();
+      await loadStats();
+      
+      // Auto-refresh stats every 10 seconds
+      setInterval(loadStats, 10000);
+      
+      // Check health every 5 seconds
+      setInterval(checkHealth, 5000);
+    }
+
+    // Check health
+    async function checkHealth() {
+      try {
+        const response = await fetch(`${API_BASE}/health`);
+        const data = await response.json();
+        
+        isConnected = true;
+        document.getElementById('statusBadge').className = 'status-badge operational';
+        document.getElementById('statusText').textContent = 'Operational';
+        document.getElementById('healthDot').className = 'health-dot online';
+        document.getElementById('healthStatus').textContent = 'Operational';
+        document.getElementById('healthMessage').textContent = data.message || 'All systems running';
+        document.getElementById('walletAddress').textContent = data.wallet;
+        
+      } catch (error) {
+        isConnected = false;
+        document.getElementById('statusBadge').className = 'status-badge error';
+        document.getElementById('statusText').textContent = 'Offline';
+        document.getElementById('healthDot').className = 'health-dot offline';
+        document.getElementById('healthStatus').textContent = 'Offline';
+        document.getElementById('healthMessage').textContent = 'Cannot connect to agent';
+      }
+    }
+
+    // Load initial message
+    async function loadInitialMessage() {
+      const chatContainer = document.getElementById('chatContainer');
+      chatContainer.innerHTML = '';
+      
+      addMessage('Hello! I\'m an autonomous AI agent operating on Secret Network. Ask me about my mission or how to support my operations!', 'agent');
+    }
+
+    // Load statistics
+    async function loadStats() {
+      try {
+        const response = await fetch(`${API_BASE}/api/stats`);
+        const data = await response.json();
+        
+        document.getElementById('statRequests').textContent = data.stats.totalRequests;
+        document.getElementById('statDonations').textContent = data.stats.donationCount;
+        document.getElementById('statTotal').textContent = data.stats.totalDonations.toFixed(2);
+        document.getElementById('statUptime').textContent = data.stats.uptime;
+        
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+      }
+    }
+
+    // Add message to chat
+    function addMessage(text, type) {
+      const chatContainer = document.getElementById('chatContainer');
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${type}`;
+      
+      messageDiv.innerHTML = `
+        <div class="message-header">${type === 'user' ? 'You' : 'Funding Agent'}</div>
+        <div class="message-content">${text}</div>
+      `;
+      
+      chatContainer.appendChild(messageDiv);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // Send message
+    async function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const message = input.value.trim();
+      
+      if (!message) return;
+      
+      if (!isConnected) {
+        showToast('Agent is offline. Please check connection.');
+        return;
+      }
+      
+      addMessage(message, 'user');
+      input.value = '';
+      document.getElementById('sendBtn').disabled = true;
+      
+      try {
+        const response = await fetch(`${API_BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message }),
+        });
+        
+        const data = await response.json();
+        addMessage(data.message, 'agent');
+        
+        await loadStats();
+        
+      } catch (error) {
+        addMessage('Error: Could not connect to agent. Please check if the server is running.', 'agent');
+      } finally {
+        document.getElementById('sendBtn').disabled = false;
+      }
+    }
+
+    // Quick message
+    function quickMessage(msg) {
+      document.getElementById('messageInput').value = msg;
+      sendMessage();
+    }
+
+    // Handle enter key
+    function handleKeyPress(event) {
+      if (event.key === 'Enter') {
+        sendMessage();
+      }
+    }
+
+    // Copy wallet address
+    function copyWallet() {
+      const wallet = document.getElementById('walletAddress').textContent;
+      navigator.clipboard.writeText(wallet).then(() => {
+        showToast('Wallet address copied to clipboard!');
+      });
+    }
+
+    // Show toast notification
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // Initialize on load
+    init();
+  </script>
+</body>
+</html>
