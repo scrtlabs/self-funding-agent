@@ -175,7 +175,7 @@ const config = {
   minBalanceUsd: parseFloat(process.env.FUNDING_AGENT_MIN_BALANCE_USD || '0.5'),
   topUpAmountUsd: parseFloat(process.env.FUNDING_AGENT_TOPUP_USD || '5'),
   checkIntervalMs: parseInt(process.env.FUNDING_AGENT_CHECK_INTERVAL_MS || '60000'), // 1 minute
-  baseUrl: process.env.FUNDING_AGENT_BASE_URL || 'https://preview-aidev.scrtlabs.com/',
+  baseUrl: (process.env.FUNDING_AGENT_BASE_URL || 'https://preview-aidev.scrtlabs.com').replace(/\/+$/, ''), // Remove trailing slashes
   chainRpcUrl: process.env.FUNDING_AGENT_CHAIN_RPC_URL || 'https://mainnet.base.org',
   vmId: process.env.VM_ID || null, // VM ID passed as secret env
 };

@@ -3,6 +3,7 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
+      - main
       - master
     paths:
       - '**'
@@ -61,14 +62,12 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
 
-      - name: Generate deployment files
-        run: |
-          ./deploy.sh
-          
       - name: Upload deployment artifacts
         uses: actions/upload-artifact@v4
         with:
           name: deployment-files
           path: |
+            docker-compose.production.yml
             docker-compose.yml
+            .env.example
             README.md
