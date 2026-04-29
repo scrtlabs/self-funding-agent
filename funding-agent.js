@@ -4,6 +4,11 @@ import fetch from 'node-fetch';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Secure wallet storage path (persistent volume in VM)
 const WALLET_STORAGE_PATH = process.env.WALLET_STORAGE_PATH || '/data/agent-wallet.json';
@@ -414,6 +419,24 @@ function getUrgencyLevel(balance) {
 const app = express();
 app.use(express.json());
 
+// Serve dashboard UI
+app.get('/', (req, res) => {
+  const dashboardPath = path.join(__dirname, 'funding-dashboard.html');
+  if (fs.existsSync(dashboardPath)) {
+    res.sendFile(dashboardPath);
+  } else {
+    res.json({ 
+      message: 'Funding Agent API',
+      endpoints: {
+        dashboard: 'GET /',
+        chat: 'POST /api/chat',
+        stats: 'GET /api/stats',
+        health: 'GET /health'
+      }
+    });
+  }
+});
+
 // Main chat endpoint
 app.post('/api/chat', async (req, res) => {
   stats.totalRequests++;
@@ -543,6 +566,7 @@ async function startAgent() {
     // Start Express server
     app.listen(config.port, async () => {
       console.log('Endpoints:');
+      console.log(`  GET  http://localhost:${config.port}/           (Dashboard UI)`);
       console.log(`  POST http://localhost:${config.port}/api/chat`);
       console.log(`  GET  http://localhost:${config.port}/api/stats`);
       console.log(`  GET  http://localhost:${config.port}/health`);

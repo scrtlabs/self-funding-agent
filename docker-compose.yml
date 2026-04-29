@@ -9,9 +9,6 @@ services:
       # VM Configuration (REQUIRED - passed as secret)
       - VM_ID=${VM_ID}
       
-      # Wallet Security (REQUIRED - unique per VM)
-      - VM_SECRET=${VM_SECRET}
-      
       # Agent Configuration
       - FUNDING_AGENT_PORT=3002
       - FUNDING_AGENT_MIN_BALANCE_USD=0.5

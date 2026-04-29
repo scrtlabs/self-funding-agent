@@ -14,6 +14,7 @@ RUN npm install --production
 
 # Copy application code
 COPY funding-agent.js .
+COPY funding-dashboard.html .
 
 # Create data directory for wallet storage
 RUN mkdir -p /data && chmod 700 /data
