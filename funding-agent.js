@@ -248,19 +248,26 @@ class VMBalanceManager {
 
       const method = 'GET';
       const path = `/api/agent/balance?vm_id=${config.vmId}`;
-      const body = '';
+      const url = `${config.baseUrl}${path}`;
+      
+      log(`Checking VM balance: ${method} ${url}`);
       
       // No authentication required for balance check
-      const response = await fetch(`${config.baseUrl}${path}`, {
+      const response = await fetch(url, {
         method,
       });
 
+      log(`Balance check response status: ${response.status} ${response.statusText}`);
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        log('Balance check error data:', errorData);
         throw new Error(`Balance check failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
       }
 
       const data = await response.json();
+      log('Balance check response data:', data);
+      
       const balance = parseFloat(data.balance_usdc || 0);
       
       stats.lastBalanceCheck = new Date();
@@ -285,6 +292,7 @@ class VMBalanceManager {
       
       const method = 'POST';
       const path = '/api/agent/add-funds';
+      const url = `${config.baseUrl}${path}`;
       const payload = {
         vm_id: config.vmId,
         amount_usdc: amountUsd.toString(),
@@ -293,8 +301,12 @@ class VMBalanceManager {
       const body = stableStringify(payload);
       const headers = await buildAgentHeaders(method, path, body);
       
+      log(`Top-up request: ${method} ${url}`);
+      log('Top-up headers:', { ...headers, 'Content-Type': 'application/json' });
+      log('Top-up body:', body);
+
       // Initial request (will return 402 Payment Required)
-      const response = await fetch(`${config.baseUrl}${path}`, {
+      const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -303,7 +315,10 @@ class VMBalanceManager {
         body,
       });
 
+      log(`Top-up response status: ${response.status} ${response.statusText}`);
+
       const responseData = await response.json();
+      log('Top-up response data:', responseData);
       
       if (response.status === 402) {
         log('Payment required (402). x402 payment flow needed.');
