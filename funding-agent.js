@@ -171,13 +171,14 @@ class SecureWalletManager {
 
 // Configuration
 const config = {
-  port: process.env.FUNDING_AGENT_PORT || 3002,
+  port: parseInt(process.env.FUNDING_AGENT_PORT || '3002'),
   minBalanceUsd: parseFloat(process.env.FUNDING_AGENT_MIN_BALANCE_USD || '0.5'),
   topUpAmountUsd: parseFloat(process.env.FUNDING_AGENT_TOPUP_USD || '5'),
-  checkIntervalMs: parseInt(process.env.FUNDING_AGENT_CHECK_INTERVAL_MS || '60000'), // 1 minute
-  baseUrl: (process.env.FUNDING_AGENT_BASE_URL || 'https://preview-aidev.scrtlabs.com').replace(/\/+$/, ''), // Remove trailing slashes
+  checkIntervalMs: parseInt(process.env.FUNDING_AGENT_CHECK_INTERVAL_MS || '60000'),
+  // Remove trailing slash from baseUrl to prevent double slashes
+  baseUrl: (process.env.FUNDING_AGENT_BASE_URL || 'https://preview-aidev.scrtlabs.com/').replace(/\/$/, ''),
   chainRpcUrl: process.env.FUNDING_AGENT_CHAIN_RPC_URL || 'https://mainnet.base.org',
-  vmId: process.env.VM_ID || null, // VM ID passed as secret env
+  vmId: process.env.VM_ID || process.env.FUNDING_AGENT_VM_ID || null,
 };
 
 // Initialize wallet manager

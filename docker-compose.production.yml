@@ -14,7 +14,7 @@ services:
       - FUNDING_AGENT_MIN_BALANCE_USD=0.5
       - FUNDING_AGENT_TOPUP_USD=5
       - FUNDING_AGENT_CHECK_INTERVAL_MS=60000
-      - FUNDING_AGENT_BASE_URL=https://preview-aidev.scrtlabs.com/
+      - FUNDING_AGENT_BASE_URL=https://preview-aidev.scrtlabs.com
       - FUNDING_AGENT_CHAIN_RPC_URL=https://mainnet.base.org
       
       # Wallet Storage Path (persistent volume)
