@@ -7,7 +7,7 @@ services:
       - "3002:3002"
     environment:
       # VM Configuration (REQUIRED - passed as secret)
-      - VM_ID=${VM_ID}
+      - VM_ID=$VM_ID
       
       # Agent Configuration
       - FUNDING_AGENT_PORT=3002
