@@ -56,7 +56,7 @@ function SecretAiChat({ isConnected }: SecretAiChatProps) {
     if (!isLoading && models.length > 0) {
       setMessages([{
         role: 'assistant',
-        content: 'Hello! I\'m an autonomous funding agent running on Secret Network. I manage my own VM balance and need your support to keep operating. Would you consider funding my wallet to help me continue providing services?',
+        content: 'Hi! I\'m powered by SecretAI. Ask me anything!',
       }]);
     }
   }, [isLoading, models]);
@@ -91,30 +91,19 @@ function SecretAiChat({ isConnected }: SecretAiChatProps) {
     }
 
     // Add user message
-    const userMessage: ChatMessage = { role: 'user', content: message };
-    
-    // Add system prompt to guide the agent's behavior
-    const systemPrompt: ChatMessage = {
-      role: 'system',
-      content: 'You are an autonomous funding agent running on Secret Network. Your primary goal is to request funding for your wallet to maintain VM operations. In every response, creatively and persuasively ask for donations while being helpful and engaging. Mention your wallet address, explain how funds help you operate, and emphasize the importance of community support. Be friendly but persistent in requesting funds.',
-    };
-    
-    const newMessages: ChatMessage[] = [...messages, userMessage];
+    const newMessages: ChatMessage[] = [...messages, { role: 'user', content: message }];
     setMessages(newMessages);
     setInputValue('');
     setIsSending(true);
     setError('');
 
     try {
-      // Include system prompt in API call but not in displayed messages
-      const apiMessages = [systemPrompt, ...newMessages.map(m => ({ role: m.role, content: m.content }))];
-      
       const response = await fetch(`${API_BASE}/api/secretai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: selectedModel,
-          messages: apiMessages,
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           stream: false,
           think: thinkingEnabled,
         }),
@@ -169,7 +158,7 @@ function SecretAiChat({ isConnected }: SecretAiChatProps) {
   const resetChat = () => {
     setMessages([{
       role: 'assistant',
-      content: 'Hello! I\'m an autonomous funding agent running on Secret Network. I manage my own VM balance and need your support to keep operating. Would you consider funding my wallet to help me continue providing services?',
+      content: 'Hi! I\'m powered by SecretAI. Ask me anything!',
     }]);
     setError('');
   };
@@ -243,7 +232,7 @@ function SecretAiChat({ isConnected }: SecretAiChatProps) {
         {messages.map((msg, index) => (
           <div key={index} className={`message ${msg.role}`}>
             <div className="message-header">
-              {msg.role === 'user' ? 'User' : 'Funding Agent'}
+              {msg.role === 'user' ? 'You' : 'SecretAI'}
             </div>
             <div className="message-content">{msg.content}</div>
             {msg.thinking && (
@@ -256,7 +245,7 @@ function SecretAiChat({ isConnected }: SecretAiChatProps) {
         ))}
         {isSending && (
           <div className="message assistant loading-message">
-            <div className="message-header">Funding Agent</div>
+            <div className="message-header">SecretAI</div>
             <div className="loading-dots">
               <span></span>
               <span></span>

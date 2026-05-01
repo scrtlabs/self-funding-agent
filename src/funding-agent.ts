@@ -4,10 +4,12 @@ import fetch from 'node-fetch';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { PassThrough } from 'stream';
 import { fileURLToPath } from 'url';
 import { ApiKeyStorageManager } from './api-key-storage.js';
 import { ApiKeyFetcher } from './api-key-fetcher.js';
 import { SecretAiClient } from './secretai-client.js';
+import { ChatHistoryRecord, OnchainChatStorage } from './onchain-chat-storage.js';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -231,6 +233,13 @@ let apiKeyFetcher: ApiKeyFetcher | null = null;
 // Initialize SecretAI client
 let secretAiClient: SecretAiClient | null = null;
 
+// Initialize optional on-chain chat history storage
+const chatHistoryStorage = OnchainChatStorage.fromEnv(log);
+const streamCaptureLimitBytes = Math.max(
+  parseInt(process.env.AUTONOMYS_STREAM_CAPTURE_LIMIT_BYTES || '262144', 10) || 262144,
+  1024,
+);
+
 // Stats
 const stats: Stats = {
   totalRequests: 0,
@@ -267,6 +276,49 @@ function stableStringify(value: any): string {
     return input;
   };
   return JSON.stringify(normalize(value));
+}
+
+function getClientIp(req: Request): string | null {
+  const forwardedFor = req.headers['x-forwarded-for'];
+
+  if (typeof forwardedFor === 'string') {
+    return forwardedFor.split(',')[0].trim();
+  }
+
+  if (Array.isArray(forwardedFor) && forwardedFor.length > 0) {
+    return forwardedFor[0].trim();
+  }
+
+  return req.socket.remoteAddress || null;
+}
+
+function serializeError(error: unknown): { message: string; stack?: string } {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return {
+    message: typeof error === 'string' ? error : 'Unknown error',
+  };
+}
+
+function queueChatHistory(record: ChatHistoryRecord): void {
+  if (!chatHistoryStorage.isEnabled()) {
+    return;
+  }
+
+  // TEMPORARILY DISABLED: on-chain chat history upload from the agent side.
+  // Re-enable by uncommenting the upload block below.
+  void record;
+  /*
+  void chatHistoryStorage.store(record).catch((error: unknown) => {
+    const normalizedError = serializeError(error);
+    log('⚠️ Failed to persist chat history on-chain:', normalizedError.message);
+  });
+  */
 }
 
 async function buildAgentHeaders(method: string, path: string, body: string): Promise<Record<string, string>> {
@@ -528,6 +580,7 @@ app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
 // Main chat endpoint
 app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
   stats.totalRequests++;
+  const requestId = crypto.randomUUID();
   
   const { message } = req.body;
   const urgency = getUrgencyLevel(stats.vmBalance);
@@ -584,6 +637,23 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
       status: urgency,
     };
   }
+
+  queueChatHistory({
+    requestId,
+    endpoint: '/api/chat',
+    timestamp: new Date().toISOString(),
+    request: {
+      message: message || '',
+    },
+    response,
+    metadata: {
+      status: 'success',
+      ip: getClientIp(req),
+      userAgent: req.get('user-agent') || null,
+      vmId: config.vmId,
+      wallet: wallet?.address || null,
+    },
+  });
   
   res.json(response);
 });
@@ -611,20 +681,63 @@ app.get('/api/secretai/models', async (_req: Request, res: Response): Promise<vo
 
 // SecretAI Chat endpoint
 app.post('/api/secretai/chat', async (req: Request, res: Response): Promise<void> => {
+  const requestId = crypto.randomUUID();
+  const requestTimestamp = new Date().toISOString();
+  const { model, messages, stream, think } = req.body || {};
+  const streamEnabled = stream === true;
+  const thinkEnabled = think === true;
+
+  const persistSecretAiHistory = (payload: {
+    status: string;
+    response?: unknown;
+    error?: { message: string; stack?: string };
+    extraMetadata?: Record<string, unknown>;
+  }): void => {
+    queueChatHistory({
+      requestId,
+      endpoint: '/api/secretai/chat',
+      timestamp: requestTimestamp,
+      request: {
+        model: typeof model === 'string' ? model : null,
+        messages: Array.isArray(messages) ? messages : (messages ?? null),
+        stream: streamEnabled,
+        think: thinkEnabled,
+      },
+      response: payload.response,
+      error: payload.error,
+      metadata: {
+        status: payload.status,
+        ip: getClientIp(req),
+        userAgent: req.get('user-agent') || null,
+        ...(payload.extraMetadata || {}),
+      },
+    });
+  };
+
   try {
     if (!secretAiClient) {
+      persistSecretAiHistory({
+        status: 'rejected',
+        error: { message: 'SecretAI client not initialized' },
+      });
       res.status(500).json({ error: 'SecretAI client not initialized' });
       return;
     }
 
     if (!secretAiClient.hasApiKey()) {
+      persistSecretAiHistory({
+        status: 'rejected',
+        error: { message: 'No API key available. Please wait for keys to be fetched.' },
+      });
       res.status(503).json({ error: 'No API key available. Please wait for keys to be fetched.' });
       return;
     }
 
-    const { model, messages, stream, think } = req.body;
-
     if (!model || !messages || !Array.isArray(messages)) {
+      persistSecretAiHistory({
+        status: 'invalid_request',
+        error: { message: 'Invalid request. Required: model (string), messages (array)' },
+      });
       res.status(400).json({ error: 'Invalid request. Required: model (string), messages (array)' });
       return;
     }
@@ -632,21 +745,87 @@ app.post('/api/secretai/chat', async (req: Request, res: Response): Promise<void
     const response = await secretAiClient.chat({
       model,
       messages,
-      stream: stream || false,
-      think: think || false,
+      stream: streamEnabled,
+      think: thinkEnabled,
     });
 
-    if (stream) {
-      // For streaming, pipe the response
+    if (streamEnabled) {
+      const upstreamBody = (response as any).body as NodeJS.ReadableStream | null;
+      if (!upstreamBody || typeof (upstreamBody as any).pipe !== 'function') {
+        throw new Error('SecretAI returned an invalid stream body');
+      }
+
       res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache');
-      (response as any).body.pipe(res);
-    } else {
-      res.json(response);
+      const streamTee = new PassThrough();
+      let capturedPayload = '';
+      let capturedBytes = 0;
+      let captureTruncated = false;
+      let persisted = false;
+
+      const finalizeStreamRecord = (status: string, streamError?: unknown): void => {
+        if (persisted) {
+          return;
+        }
+        persisted = true;
+
+        persistSecretAiHistory({
+          status,
+          response: {
+            streamCapture: capturedPayload,
+            streamCaptureBytes: capturedBytes,
+            streamCaptureTruncated: captureTruncated,
+          },
+          error: streamError ? serializeError(streamError) : undefined,
+        });
+      };
+
+      streamTee.on('data', (chunk: Buffer | string) => {
+        const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        if (capturedBytes >= streamCaptureLimitBytes) {
+          captureTruncated = true;
+          return;
+        }
+
+        const available = streamCaptureLimitBytes - capturedBytes;
+        const selectedChunk = chunkBuffer.subarray(0, available);
+        capturedPayload += selectedChunk.toString('utf8');
+        capturedBytes += selectedChunk.length;
+
+        if (selectedChunk.length < chunkBuffer.length) {
+          captureTruncated = true;
+        }
+      });
+
+      streamTee.on('end', () => finalizeStreamRecord('success'));
+      streamTee.on('error', (streamError: unknown) => finalizeStreamRecord('stream_error', streamError));
+      (upstreamBody as any).on('error', (streamError: unknown) => finalizeStreamRecord('upstream_stream_error', streamError));
+
+      (upstreamBody as any).pipe(streamTee);
+      streamTee.pipe(res);
+      return;
     }
+
+    persistSecretAiHistory({
+      status: 'success',
+      response,
+    });
+    res.json(response);
   } catch (error: any) {
+    persistSecretAiHistory({
+      status: 'error',
+      error: serializeError(error),
+    });
     console.error('[API] Error in SecretAI chat:', error.message);
-    res.status(500).json({ error: error.message });
+
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    if (!res.writableEnded) {
+      res.end();
+    }
   }
 });
 
@@ -791,6 +970,10 @@ async function startAgent(): Promise<void> {
     console.log('📊 Min Balance Threshold: $' + config.minBalanceUsd + ' USD');
     console.log('💵 Top-up Amount: $' + config.topUpAmountUsd + ' USD');
     console.log('⏱️  Check Interval:', config.checkIntervalMs / 1000, 'seconds');
+    console.log(
+      '🗄️  On-chain Chat History:',
+      chatHistoryStorage.isEnabled() ? 'Enabled (Autonomys Auto Drive)' : 'Disabled',
+    );
     console.log('');
     
     if (!config.vmId) {
