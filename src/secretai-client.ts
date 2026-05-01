@@ -61,19 +61,27 @@ export class SecretAiClient {
         throw new Error('No API key available. Please ensure API keys are fetched and stored.');
       }
 
+      console.log('[SecretAiClient] Fetching models from:', this.baseUrl);
+      console.log('[SecretAiClient] Using API key:', apiKey.substring(0, 10) + '...');
+
       const response = await fetch(`${this.baseUrl}/api/tags`, {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
         },
       });
 
+      console.log('[SecretAiClient] Models response status:', response.status, response.statusText);
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
+        const errorText = await response.text().catch(() => '');
+        console.error('[SecretAiClient] Error response:', errorText);
+        throw new Error(`Failed to fetch models: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data: any = await response.json();
 
       if (data && Array.isArray(data.models)) {
+        console.log('[SecretAiClient] Found', data.models.length, 'models');
         return data.models.map((m: any) => m.name);
       }
 
