@@ -71,6 +71,40 @@
       gap: 16px;
     }
 
+    /* Attestation badge */
+    .tee-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #10b981;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tee-badge:hover { background: rgba(16, 185, 129, 0.22); }
+    .tee-badge .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      flex-shrink: 0;
+    }
+    .tee-badge.loading .dot {
+      background: transparent;
+      border: 2px solid #10b981;
+      border-top-color: transparent;
+      animation: spin 0.8s linear infinite;
+    }
+    .tee-badge.error { border-color: rgba(239, 68, 68, 0.4); color: #ef4444; background: rgba(239, 68, 68, 0.12); }
+    .tee-badge.error .dot { background: #ef4444; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     .header h1 {
       font-size: 24px;
       color: #ffffff;
@@ -93,12 +127,6 @@
       font-weight: 600;
       backdrop-filter: blur(10px);
       white-space: nowrap;
-    }
-
-    .status-badge.operational {
-      background: rgba(16, 185, 129, 0.2);
-      color: #10b981;
-      border: 1px solid rgba(16, 185, 129, 0.3);
     }
 
     .status-badge.error {
@@ -546,6 +574,132 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    /* Side panel */
+    .side-panel {
+      position: fixed;
+      top: 0;
+      right: -400px;
+      width: 400px;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.98);
+      backdrop-filter: blur(20px);
+      border-left: 1px solid rgba(255, 255, 255, 0.1);
+      transition: right 0.3s ease;
+      z-index: 1000;
+      overflow-y: auto;
+      box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+    }
+    .side-panel.open { right: 0; }
+    .side-panel-inner {
+      padding: 24px;
+    }
+    .panel-header {
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      margin-bottom: 20px;
+    }
+    .panel-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .panel-header h2 { font-size: 1.3rem; font-weight: 700; color: #ffffff; margin: 0; }
+    .panel-close-btn {
+      background: none;
+      border: none;
+      color: #6b6b7b;
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 4px 8px;
+      transition: color 0.2s;
+    }
+    .panel-close-btn:hover { color: #a0a0b0; }
+    .panel-server { font-size: 0.85rem; color: #6b6b7b; margin-top: 4px; }
+    .status-banner {
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .status-banner.success { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .status-banner.failure { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .status-banner.loading { background: rgba(255,255,255,0.05); color: #a0a0b0; border: 1px solid rgba(255, 255, 255, 0.1); }
+    .verify-btn {
+      margin-bottom: 16px;
+      padding: 12px;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      border-radius: 12px;
+      color: #ffffff;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .verify-btn:hover { background: rgba(99, 102, 241, 0.3); transform: translateY(-1px); }
+    .attestation-list { display: flex; flex-direction: column; gap: 12px; }
+    .attest-item {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.03);
+      transition: all 0.2s;
+    }
+    .attest-item:hover { background: rgba(255, 255, 255, 0.05); }
+    .attest-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      cursor: pointer;
+    }
+    .attest-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      font-weight: 700;
+    }
+    .attest-icon.pass { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+    .attest-icon.fail { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .attest-icon.na { background: rgba(255,255,255,0.05); color: #6b6b7b; }
+    .attest-title { font-weight: 600; font-size: 0.95rem; flex: 1; color: #ffffff; }
+    .attest-chevron { color: #6b6b7b; font-size: 0.8rem; transition: transform 0.2s; }
+    .attest-item.expanded .attest-chevron { transform: rotate(90deg); }
+    .attest-body {
+      padding: 0 16px 16px 60px;
+      font-size: 0.85rem;
+      color: #a0a0b0;
+      line-height: 1.6;
+      display: none;
+    }
+    .attest-item.expanded .attest-body { display: block; }
+    .attest-body p { margin-bottom: 12px; }
+    .attest-body a { color: #34d399; text-decoration: none; font-size: 0.8rem; }
+    .attest-body a:hover { text-decoration: underline; }
+    .attest-detail {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .attest-detail:last-child { border-bottom: none; }
+    .attest-detail .label { color: #6b6b7b; font-size: 0.8rem; }
+    .attest-detail .value { color: #ccc; font-family: monospace; font-size: 0.8rem; }
   </style>
 </head>
 <body>
@@ -558,8 +712,9 @@
           <p>Autonomous AI Agent - Community Supported</p>
         </div>
       </div>
-      <div class="status-badge operational" id="statusBadge">
-        <span id="statusText">Connecting...</span>
+      <div id="tee-badge" class="tee-badge">
+        <span class="dot"></span>
+        <span class="tee-text">Verified Confidential</span>
       </div>
     </div>
 
@@ -661,18 +816,188 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast"></div>
 
+  <!-- Attestation Side Panel -->
+  <div id="side-panel" class="side-panel">
+    <div class="side-panel-inner">
+      <div class="panel-header">
+        <div class="panel-header-top">
+          <h2>Verification Center</h2>
+          <button id="panel-close" class="panel-close-btn">&times;</button>
+        </div>
+        <div id="panel-server" class="panel-server">Checking attestation...</div>
+      </div>
+      <div id="status-banner" class="status-banner loading">Waiting...</div>
+      <button id="verify-again" class="verify-btn">&#x21bb; Verify Again</button>
+      <div id="attestation-list" class="attestation-list"></div>
+    </div>
+  </div>
+
   <script>
     // Use current host for API calls, fallback to localhost for local development
     const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       ? 'http://localhost:3002'
       : `${window.location.protocol}//${window.location.hostname}`;
     let isConnected = false;
+    let panelOpen = false;
+
+    // Attestation panel elements
+    const teeBadge = document.getElementById('tee-badge');
+    const sidePanel = document.getElementById('side-panel');
+    const panelClose = document.getElementById('panel-close');
+    const panelServer = document.getElementById('panel-server');
+    const statusBanner = document.getElementById('status-banner');
+    const attestList = document.getElementById('attestation-list');
+    const verifyAgainBtn = document.getElementById('verify-again');
+
+    function togglePanel() {
+      panelOpen = !panelOpen;
+      sidePanel.classList.toggle('open', panelOpen);
+    }
+
+    teeBadge.addEventListener('click', togglePanel);
+    panelClose.addEventListener('click', togglePanel);
+    verifyAgainBtn.addEventListener('click', runAttestation);
+
+    function renderAttestItem(title, descriptions, passed, details, link) {
+      const stateClass = passed === true ? 'pass' : passed === false ? 'fail' : 'na';
+      const icon = passed === true ? '\u2713' : passed === false ? '\u2717' : '\u2014';
+      const description = passed === false ? (descriptions.fail || descriptions.pass) : descriptions.pass;
+      const detailsHtml = details
+        .filter(d => d.value != null)
+        .map(d => `<div class="attest-detail"><span class="label">${d.label}</span><span class="value">${d.value}</span></div>`)
+        .join('');
+      const linkHtml = link ? `<div style="margin-top:12px"><a href="${link.url}" target="_blank">\u2197 ${link.text}</a></div>` : '';
+
+      return `<div class="attest-item">
+        <div class="attest-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <div class="attest-icon ${stateClass}">${icon}</div>
+          <div class="attest-title">${title}</div>
+          <span class="attest-chevron">\u25B6</span>
+        </div>
+        <div class="attest-body">
+          <p>${description}</p>
+          ${detailsHtml}
+          ${linkHtml}
+        </div>
+      </div>`;
+    }
+
+    function renderAttestation(data) {
+      if (data.error && !data.checks) {
+        statusBanner.className = 'status-banner failure';
+        statusBanner.textContent = '\u2717 ' + (data.error || 'Verification failed');
+        attestList.innerHTML = '';
+        return;
+      }
+
+      const allPassed = data.valid;
+      statusBanner.className = `status-banner ${allPassed ? 'success' : 'failure'}`;
+      statusBanner.textContent = allPassed ? '\u2713 All checks passed' : '\u2717 Some checks failed';
+
+      const c = data.checks;
+      const l = data.links;
+
+      attestList.innerHTML = [
+        renderAttestItem(
+          `Genuine ${c.cpu.platform || 'TEE'} Machine`,
+          {
+            pass: 'This server runs inside a genuine trusted execution environment. The CPU attestation quote has been cryptographically verified against the hardware vendor\u2019s root of trust.',
+            fail: 'CPU attestation could not be verified. The hardware may not be running inside a genuine trusted execution environment.',
+          },
+          c.cpu.passed,
+          [
+            { label: 'Platform', value: c.cpu.platform },
+            { label: 'Product', value: c.cpu.product },
+            { label: 'Measurement', value: c.cpu.measurement },
+          ],
+          { url: l.cpuQuote, text: 'View raw attestation quote' }
+        ),
+        renderAttestItem(
+          'Verified Workload',
+          {
+            pass: 'The software running inside this TEE matches the expected, publicly auditable configuration. No unauthorized code modifications detected.',
+            fail: 'Workload verification failed. The software running inside the TEE could not be confirmed to match the expected configuration.',
+          },
+          c.workload.passed,
+          [
+            { label: 'Status', value: c.workload.status },
+            { label: 'Template', value: c.workload.templateName },
+          ],
+          { url: l.dockerCompose, text: 'View docker-compose' }
+        ),
+        renderAttestItem(
+          'TLS Binding',
+          {
+            pass: 'The TLS certificate presented by this server is cryptographically bound to the CPU attestation quote. This ensures you are communicating directly with the attested TEE, with no middleman.',
+            fail: 'TLS binding could not be verified. The connection to this server may not be bound to the attested environment.',
+          },
+          c.tlsBinding.passed,
+          [
+            { label: 'TLS Fingerprint', value: c.tlsBinding.fingerprint },
+          ],
+          null
+        ),
+        renderAttestItem(
+          'GPU Attestation',
+          {
+            pass: 'The NVIDIA GPU has been verified through NVIDIA\u2019s Remote Attestation Service. Secure boot is active and all firmware measurements are valid. Verified GPU and CPU attestation binding through report_data.',
+            fail: 'GPU attestation could not be verified. The GPU\u2019s integrity could not be confirmed through NVIDIA\u2019s Remote Attestation Service.',
+          },
+          c.gpu.passed,
+          [
+            { label: 'GPU Model', value: c.gpu.model },
+            { label: 'Secure Boot', value: c.gpu.secureBoot === true ? 'Enabled' : c.gpu.secureBoot === false ? 'Disabled' : null },
+            { label: 'CPU Binding', value: c.gpu.cpuBound === true ? 'Verified' : c.gpu.cpuBound === false ? 'Failed' : null },
+          ],
+          { url: l.gpuAttestation, text: 'View GPU attestation report' }
+        ),
+        renderAttestItem(
+          'Proof of Cloud',
+          {
+            pass: 'The machine\u2019s identity has been validated against a known cloud provider. This confirms the server is running on legitimate infrastructure, not a simulated environment.',
+            fail: 'Proof of Cloud could not be validated. The machine\u2019s cloud provider identity could not be confirmed.',
+          },
+          c.proofOfCloud.passed,
+          [],
+          null
+        ),
+      ].join('');
+    }
+
+    function setBadgeState(state) {
+      teeBadge.className = 'tee-badge' + (state === 'loading' ? ' loading' : state === 'error' ? ' error' : '');
+      const textEl = teeBadge.querySelector('.tee-text');
+      if (state === 'loading') textEl.textContent = 'Verifying...';
+      else if (state === 'error') textEl.textContent = 'Verification Failed';
+      else textEl.textContent = 'Verified Confidential';
+    }
+
+    async function runAttestation() {
+      setBadgeState('loading');
+      statusBanner.className = 'status-banner loading';
+      statusBanner.textContent = 'Verifying...';
+      attestList.innerHTML = '';
+      panelServer.textContent = 'Running attestation checks...';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/attestation`);
+        const data = await res.json();
+        setBadgeState(data.valid ? 'success' : 'error');
+        panelServer.textContent = `Attestation Host: ${data.attestHost || 'Unknown'}`;
+        renderAttestation(data);
+      } catch (err) {
+        setBadgeState('error');
+        panelServer.textContent = 'Attestation check failed';
+        renderAttestation({ error: err.message });
+      }
+    }
 
     // Initialize
     async function init() {
       await checkHealth();
       await loadInitialMessage();
       await loadStats();
+      await runAttestation();
       
       // Auto-refresh stats every 10 seconds
       setInterval(loadStats, 10000);
@@ -688,14 +1013,10 @@
         const data = await response.json();
         
         isConnected = true;
-        document.getElementById('statusBadge').className = 'status-badge operational';
-        document.getElementById('statusText').textContent = 'Operational';
         document.getElementById('walletAddress').textContent = data.wallet;
         
       } catch (error) {
         isConnected = false;
-        document.getElementById('statusBadge').className = 'status-badge error';
-        document.getElementById('statusText').textContent = 'Offline';
       }
     }
 

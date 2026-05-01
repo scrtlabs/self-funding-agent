@@ -16,6 +16,7 @@ services:
       - FUNDING_AGENT_CHECK_INTERVAL_MS=60000
       - FUNDING_AGENT_BASE_URL=https://preview-aidev.scrtlabs.com
       - FUNDING_AGENT_CHAIN_RPC_URL=https://mainnet.base.org
+      - ATTEST_HOST=${ATTEST_HOST}
       
       # Wallet Storage Path (persistent volume)
       - WALLET_STORAGE_PATH=/data/agent-wallet.json

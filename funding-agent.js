@@ -5,10 +5,15 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import https from 'https';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Hoist ESM import — secretvm-verify is ESM-only, cache it at startup
+let checkSecretVm;
+import('secretvm-verify').then((m) => { checkSecretVm = m.checkSecretVm; });
 
 // Secure wallet storage path (persistent volume in VM)
 const WALLET_STORAGE_PATH = process.env.WALLET_STORAGE_PATH || path.join(__dirname, 'data', 'agent-wallet.json');
@@ -179,6 +184,8 @@ const config = {
   baseUrl: (process.env.FUNDING_AGENT_BASE_URL || 'https://preview-aidev.scrtlabs.com/').replace(/\/$/, ''),
   chainRpcUrl: process.env.FUNDING_AGENT_CHAIN_RPC_URL || 'https://mainnet.base.org',
   vmId: process.env.VM_ID || process.env.FUNDING_AGENT_VM_ID || null,
+  attestHost: process.env.ATTEST_HOST || 'localhost',
+  attestPort: parseInt(process.env.ATTEST_PORT || '29343'),
 };
 
 // Initialize wallet manager
@@ -556,6 +563,81 @@ app.get('/health', (req, res) => {
     vmBalance: stats.currentBalance,
     message: 'Funding Agent operational. Monitoring VM balance. 💚',
   });
+});
+
+// Attestation endpoint
+app.get('/api/attestation', async (req, res) => {
+  if (!config.attestHost) {
+    return res.status(400).json({ valid: false, error: 'Attestation host not configured' });
+  }
+
+  try {
+    // checkSecretVm(host, product, reloadAmdKds, checkProofOfCloud)
+    const result = await checkSecretVm(config.attestHost, '', false, true);
+
+    const baseAttestUrl = `https://${config.attestHost}:${config.attestPort}`;
+
+    // Overall validity excludes proof_of_cloud — we still show the VM as verified
+    // even if ProofOfCloud fails, since the core TEE attestation is what matters.
+    const coreChecks = [
+      result.checks.cpu_quote_verified,
+      result.checks.tls_binding_verified,
+      result.checks.workload_binding_verified,
+      result.checks.gpu_quote_verified,
+      result.checks.gpu_binding_verified,
+    ];
+    const valid = coreChecks.every((c) => c !== false);
+
+    const response = {
+      valid,
+      attestHost: config.attestHost,
+      attestationType: result.attestationType || 'Unknown',
+      checks: {
+        cpu: {
+          passed: result.checks.cpu_quote_verified ?? null,
+          platform: result.report.cpu_type || 'Unknown',
+          product: result.report.cpu?.product || null,
+          measurement: result.report.cpu?.measurement
+            ? (result.report.cpu.measurement.substring(0, 8) + '...' + result.report.cpu.measurement.slice(-4))
+            : null,
+        },
+        workload: {
+          passed: result.checks.workload_binding_verified ?? null,
+          status: result.report.workload?.status || null,
+          templateName: result.report.workload?.template_name || null,
+        },
+        tlsBinding: {
+          passed: result.checks.tls_binding_verified ?? null,
+          fingerprint: result.report.tls_fingerprint
+            ? (result.report.tls_fingerprint.substring(0, 8) + '...' + result.report.tls_fingerprint.slice(-4))
+            : null,
+        },
+        gpu: (() => {
+          const gpus = result.report.gpu?.gpus;
+          const firstGpu = gpus ? Object.values(gpus)[0] : null;
+          return {
+            passed: result.checks.gpu_quote_verified ?? null,
+            cpuBound: result.checks.gpu_binding_verified ?? null,
+            model: firstGpu?.model || null,
+            secureBoot: firstGpu?.secure_boot ?? null,
+          };
+        })(),
+        proofOfCloud: {
+          passed: result.checks.proof_of_cloud_verified ?? null,
+        },
+      },
+      links: {
+        cpuQuote: `${baseAttestUrl}/cpu`,
+        dockerCompose: `${baseAttestUrl}/docker-compose`,
+        gpuAttestation: `${baseAttestUrl}/gpu`,
+      },
+      errors: result.errors || [],
+    };
+
+    res.json(response);
+  } catch (err) {
+    res.status(502).json({ valid: false, error: err.message });
+  }
 });
 
 // Initialize and start
