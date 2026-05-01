@@ -99,8 +99,79 @@ export class ApiKeyFetcher {
   }
 
   /**
+   * Create a new API key for the agent
+   */
+  async createApiKey(name: string): Promise<string> {
+    try {
+      const method = 'POST';
+      const path = '/api/CreateApiKey';
+      const url = `${this.baseUrl}${path}`;
+      
+      const payload = {
+        identity: this.wallet.address,
+        name: name,
+      };
+      const body = this.stableStringify(payload);
+
+      console.log(`[ApiKeyFetcher] Creating new API key: ${name}`);
+
+      const headers = await this.buildAgentHeaders(method, path, body);
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body,
+      });
+
+      console.log(`[ApiKeyFetcher] Create response status: ${response.status} ${response.statusText}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('[ApiKeyFetcher] Error creating API key:', errorData);
+        throw new Error(`Failed to create API key: ${response.status} - ${(errorData as any).error || 'Unknown error'}`);
+      }
+
+      const data: any = await response.json();
+
+      if (!data.apiKey) {
+        throw new Error('API key not found in response');
+      }
+
+      console.log(`[ApiKeyFetcher] ✅ API key created successfully`);
+      console.log(`[ApiKeyFetcher] Transaction hash: ${data.transactionHash}`);
+
+      return data.apiKey;
+    } catch (error: any) {
+      console.error('[ApiKeyFetcher] Error creating API key:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Stable JSON stringify for consistent hashing
+   */
+  private stableStringify(value: any): string {
+    const normalize = (input: any): any => {
+      if (Array.isArray(input)) return input.map(normalize);
+      if (input && typeof input === 'object') {
+        return Object.keys(input)
+          .sort()
+          .reduce((acc: any, key) => {
+            acc[key] = normalize(input[key]);
+            return acc;
+          }, {});
+      }
+      return input;
+    };
+    return JSON.stringify(normalize(value));
+  }
+
+  /**
    * Fetch and store API keys
-   * Only fetches if storage is empty
+   * If no keys exist, creates a new one
    */
   async fetchAndStoreIfEmpty(): Promise<void> {
     try {
@@ -117,6 +188,16 @@ export class ApiKeyFetcher {
 
       if (apiKeys.length === 0) {
         console.log('[ApiKeyFetcher] No API keys found on endpoint');
+        console.log('[ApiKeyFetcher] Creating new API key for agent...');
+        
+        // Create a new API key
+        const keyName = `agent-${this.wallet.address.substring(0, 10)}-${Date.now()}`;
+        const newApiKey = await this.createApiKey(keyName);
+        
+        // Store the new API key
+        await this.storage.setKey(keyName, newApiKey);
+        console.log(`[ApiKeyFetcher] ✅ Stored new API key: ${keyName}`);
+        
         return;
       }
 
