@@ -879,6 +879,48 @@ app.get('/health', (_req: Request, res: Response): void => {
   });
 });
 
+// API Key refresh endpoint
+app.post('/api/refresh-api-keys', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    if (!apiKeyFetcher) {
+      res.status(500).json({ error: 'API key fetcher not initialized' });
+      return;
+    }
+
+    console.log('[API] Refreshing API keys...');
+    
+    // Clear existing keys
+    await apiKeyStorage.clearAll();
+    console.log('[API] Cleared existing API keys');
+    
+    // Try to fetch from endpoint first
+    const apiKeys = await apiKeyFetcher.fetchApiKeys();
+    
+    if (apiKeys.length === 0) {
+      console.log('[API] No API keys found, creating new one...');
+      const keyName = `agent-${wallet!.address.substring(0, 10)}-${Date.now()}`;
+      const newApiKey = await apiKeyFetcher.createApiKey(keyName);
+      await apiKeyStorage.setKey(keyName, newApiKey);
+      console.log('[API] Created and stored new API key:', keyName);
+    } else {
+      // Store fetched keys
+      for (const keyDetail of apiKeys) {
+        await apiKeyStorage.setKey(keyDetail.name, keyDetail.api_key);
+        console.log('[API] Stored API key:', keyDetail.name);
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      keyCount: apiKeyStorage.getCount(),
+      keys: apiKeyStorage.getKeyNames()
+    });
+  } catch (error: any) {
+    console.error('[API] Error refreshing API keys:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Attestation endpoint
 app.get('/api/attestation', async (_req: Request, res: Response) => {
   if (!config.attestHost) {

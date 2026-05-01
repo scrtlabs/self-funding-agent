@@ -172,14 +172,18 @@ export class ApiKeyStorageManager {
   async setKey(name: string, value: string): Promise<void> {
     this.keys.set(name, value);
     await this.saveKeys();
-    console.log(`[ApiKeyStorage] API key "${name}" saved`);
+    console.log(`[ApiKeyStorage] API key "${name}" saved (length: ${value.length}, format: ${value.startsWith('sk-') ? 'valid' : 'invalid'})`);
   }
 
   /**
    * Get an API key by name
    */
   getKey(name: string): string | undefined {
-    return this.keys.get(name);
+    const key = this.keys.get(name);
+    if (key) {
+      console.log(`[ApiKeyStorage] Retrieved API key "${name}" (length: ${key.length}, format: ${key.startsWith('sk-') ? 'valid' : 'invalid'})`);
+    }
+    return key;
   }
 
   /**

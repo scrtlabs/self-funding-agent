@@ -62,7 +62,9 @@ export class SecretAiClient {
       }
 
       console.log('[SecretAiClient] Fetching models from:', this.baseUrl);
-      console.log('[SecretAiClient] Using API key:', apiKey.substring(0, 10) + '...');
+      console.log('[SecretAiClient] API key name:', this.defaultApiKeyName);
+      console.log('[SecretAiClient] API key length:', apiKey.length);
+      console.log('[SecretAiClient] API key format check:', apiKey.startsWith('sk-') ? 'Valid (sk- prefix)' : 'Invalid format');
 
       const response = await fetch(`${this.baseUrl}/api/tags`, {
         headers: {

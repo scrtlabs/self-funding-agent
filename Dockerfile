@@ -4,6 +4,13 @@ FROM node:18-alpine AS builder
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
+# Build arguments for git info
+ARG GIT_COMMIT=unknown
+ARG GIT_COMMIT_FULL=unknown
+ARG GIT_BRANCH=unknown
+ARG GIT_TAG=
+ARG BUILD_TIME=unknown
+
 # Create app directory
 WORKDIR /app
 
@@ -22,8 +29,22 @@ COPY generate-build-info.sh ./
 # Make script executable
 RUN chmod +x generate-build-info.sh
 
-# Build TypeScript server and React client
-RUN npm run build
+# Generate build info with provided git information
+RUN VERSION=$(node -p "require('./package.json').version") && \
+    mkdir -p src && \
+    echo "{" > src/build-info.json && \
+    echo "  \"version\": \"${VERSION}\"," >> src/build-info.json && \
+    echo "  \"gitCommit\": \"${GIT_COMMIT}\"," >> src/build-info.json && \
+    echo "  \"gitCommitFull\": \"${GIT_COMMIT_FULL}\"," >> src/build-info.json && \
+    echo "  \"gitBranch\": \"${GIT_BRANCH}\"," >> src/build-info.json && \
+    echo "  \"gitTag\": \"${GIT_TAG}\"," >> src/build-info.json && \
+    echo "  \"buildTime\": \"${BUILD_TIME}\"" >> src/build-info.json && \
+    echo "}" >> src/build-info.json && \
+    echo "✅ Build info generated:" && \
+    cat src/build-info.json
+
+# Build TypeScript server and React client (skip prebuild since we already generated build-info)
+RUN npm run build:server && npm run build:client
 
 # Production stage
 FROM node:18-alpine

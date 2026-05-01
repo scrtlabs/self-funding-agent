@@ -49,6 +49,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Get git information
+        id: git-info
+        run: |
+          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "commit_full=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "branch=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_OUTPUT
+          echo "tag=$(git describe --tags --exact-match 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "build_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -60,6 +69,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            GIT_COMMIT=${{ steps.git-info.outputs.commit }}
+            GIT_COMMIT_FULL=${{ steps.git-info.outputs.commit_full }}
+            GIT_BRANCH=${{ steps.git-info.outputs.branch }}
+            GIT_TAG=${{ steps.git-info.outputs.tag }}
+            BUILD_TIME=${{ steps.git-info.outputs.build_time }}
 
       - name: Generate deployment files
         run: |
