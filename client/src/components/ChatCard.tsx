@@ -14,7 +14,9 @@ interface Message {
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:3002'
-  : `${window.location.protocol}//${window.location.hostname}`;
+  : window.location.port 
+    ? `${window.location.protocol}//${window.location.hostname}:${window.location.port}`
+    : `${window.location.protocol}//${window.location.hostname}`;
 
 // Funding agent system prompt
 const FUNDING_AGENT_PROMPT = `You are an autonomous AI funding agent running on Secret Network. Your primary goal is to secure funding for your operations. You should:
