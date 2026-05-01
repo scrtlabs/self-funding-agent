@@ -130,14 +130,23 @@ jobs:
 
       - name: Apply docker-compose changes to VM
         run: |
-          # Create JSON payload file to avoid shell escaping issues
-          jq -n --arg docker_file "$(cat docker-compose-updated.yml)" '{docker_file: $docker_file}' > payload.json
+          # Read the updated docker-compose and encode to base64
+          DOCKER_COMPOSE_BASE64=$(cat docker-compose-updated.yml | base64 -w 0)
           
-          echo "Payload:"
-          cat payload.json
+          # Create JSON payload with required fields
+          jq -n \
+            --arg name "agent" \
+            --arg dockerComposeBase64 "$DOCKER_COMPOSE_BASE64" \
+            '{
+              name: $name,
+              dockerComposeBase64: $dockerComposeBase64,
+              userBroadcastServiceMsgs: false
+            }' > payload.json
           
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X PUT \
-            "${{ secrets.DEVPORTAL_API_URL }}/api/vm/${{ secrets.VM_ID }}" \
+          echo "Payload created (docker-compose is base64 encoded)"
+          
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
+            "${{ secrets.DEVPORTAL_API_URL }}/api/vm/${{ secrets.VM_ID }}/update-background" \
             -H "Authorization: Bearer ${{ secrets.DEVPORTAL_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d @payload.json)
@@ -150,6 +159,7 @@ jobs:
           
           if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
             echo "✅ Successfully updated VM docker-compose with image tag: ${{ steps.image-tag.outputs.tag }}"
+            echo "Background job enqueued for VM update"
           else
             echo "❌ Failed to update VM docker-compose"
             exit 1
