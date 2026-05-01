@@ -682,6 +682,7 @@ app.get('/api/secretai/models', async (_req: Request, res: Response): Promise<vo
 
 // SecretAI Chat endpoint
 app.post('/api/secretai/chat', async (req: Request, res: Response): Promise<void> => {
+  stats.totalRequests++;
   const requestId = crypto.randomUUID();
   const requestTimestamp = new Date().toISOString();
   const { model, messages, stream, think } = req.body || {};
