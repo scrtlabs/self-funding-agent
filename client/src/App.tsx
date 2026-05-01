@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Header from './components/Header'
 import BalanceHero from './components/BalanceHero'
 import ChatCard from './components/ChatCard'
+import SecretAiChat from './components/SecretAiChat'
 import StatsCard from './components/StatsCard'
 import AttestationPanel from './components/AttestationPanel'
 import Toast from './components/Toast'
@@ -110,6 +111,10 @@ function App() {
             showToast={showToastMessage}
           />
           <StatsCard stats={stats} />
+        </div>
+
+        <div className="grid" style={{ marginTop: '20px' }}>
+          <SecretAiChat isConnected={isConnected} />
         </div>
       </div>
 
