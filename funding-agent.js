@@ -364,6 +364,7 @@ class VMBalanceManager {
         await this.checkVMBalance();
       }
     } else {
+      log(`TEST UPDATE`);
       log(`✅ Balance OK ($${balance.toFixed(2)} >= $${config.minBalanceUsd})`);
     }
   }
