@@ -100,8 +100,8 @@ jobs:
           echo "VM Details Response:"
           echo "$RESPONSE"
           
-          # Extract docker-compose content
-          DOCKER_COMPOSE=$(echo "$RESPONSE" | jq -r '.dockerCompose // .docker_compose // .dockerComposeYml // empty')
+          # Extract docker-compose content (try multiple field names)
+          DOCKER_COMPOSE=$(echo "$RESPONSE" | jq -r '.docker_file // .dockerCompose // .docker_compose // .dockerComposeYml // empty')
           
           if [ -z "$DOCKER_COMPOSE" ]; then
             echo "Error: Could not extract docker-compose from response"
@@ -138,7 +138,7 @@ jobs:
             "${{ secrets.DEVPORTAL_API_URL }}/api/vm/${{ secrets.VM_ID }}" \
             -H "Authorization: Bearer ${{ secrets.DEVPORTAL_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"dockerCompose\": ${{ steps.update-compose.outputs.compose }}}")
+            -d "{\"docker_file\": ${{ steps.update-compose.outputs.compose }}}")
           
           HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
           BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
