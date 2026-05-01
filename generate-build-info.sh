@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Generate build info for the agent
 # This script creates a build-info.json file with version and git information
