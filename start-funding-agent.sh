@@ -11,5 +11,11 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
+# Build if dist doesn't exist
+if [ ! -d "dist" ]; then
+    echo "📦 Building TypeScript project..."
+    npm run build
+fi
+
 # Start the funding agent
-node funding-agent.js
+node dist/funding-agent.js

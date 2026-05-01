@@ -1,31 +1,59 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { ethers } from 'ethers';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import https from 'https';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Hoist ESM import — secretvm-verify is ESM-only, cache it at startup
-let checkSecretVm;
+let checkSecretVm: any;
 import('secretvm-verify').then((m) => { checkSecretVm = m.checkSecretVm; });
 
 // Secure wallet storage path (persistent volume in VM)
-const WALLET_STORAGE_PATH = process.env.WALLET_STORAGE_PATH || path.join(__dirname, 'data', 'agent-wallet.json');
+const WALLET_STORAGE_PATH = process.env.WALLET_STORAGE_PATH || path.join(__dirname, '..', 'data', 'agent-wallet.json');
+
+interface WalletData {
+  address: string;
+  encryptedMnemonic: string;
+  encryptedAgentSecret?: string;
+  createdAt: string;
+  version: string;
+}
+
+interface Stats {
+  totalRequests: number;
+  totalDonations: number;
+  donationCount: number;
+  startTime: Date;
+  lastBalanceCheck: Date | null;
+  currentBalance: number;
+  topUpCount: number;
+  lastTopUp: Date | null;
+}
+
+interface Config {
+  port: number;
+  minBalanceUsd: number;
+  topUpAmountUsd: number;
+  checkIntervalMs: number;
+  baseUrl: string;
+  chainRpcUrl: string;
+  vmId: string | null;
+  attestHost: string;
+  attestPort: number;
+}
 
 // Wallet Management
 class SecureWalletManager {
-  constructor() {
-    this.wallet = null;
-  }
+  private wallet: ethers.HDNodeWallet | ethers.Wallet | null = null;
 
   // Create or restore wallet
-  async initialize() {
+  async initialize(): Promise<ethers.HDNodeWallet | ethers.Wallet> {
     try {
       // Check if wallet file exists
       if (fs.existsSync(WALLET_STORAGE_PATH)) {
@@ -40,14 +68,14 @@ class SecureWalletManager {
       
       log('💰 Agent Wallet Address:', this.wallet.address);
       return this.wallet;
-    } catch (error) {
+    } catch (error: any) {
       log('❌ Error initializing wallet:', error.message);
       throw error;
     }
   }
 
   // Create new wallet and save securely
-  async createNewWallet() {
+  private async createNewWallet(): Promise<ethers.HDNodeWallet> {
     // Generate new random wallet
     const wallet = ethers.Wallet.createRandom();
     
@@ -56,10 +84,10 @@ class SecureWalletManager {
     
     // Encrypt mnemonic with a key derived from VM environment + agent secret
     const encryptionKey = this.getEncryptionKey(agentSecret);
-    const encrypted = this.encrypt(wallet.mnemonic.phrase, encryptionKey);
+    const encrypted = this.encrypt(wallet.mnemonic!.phrase, encryptionKey);
     
     // Save encrypted wallet data (including encrypted agent secret)
-    const walletData = {
+    const walletData: WalletData = {
       address: wallet.address,
       encryptedMnemonic: encrypted,
       encryptedAgentSecret: this.encryptAgentSecret(agentSecret),
@@ -84,11 +112,11 @@ class SecureWalletManager {
   }
 
   // Restore wallet from encrypted storage
-  async restoreWallet() {
-    const walletData = JSON.parse(fs.readFileSync(WALLET_STORAGE_PATH, 'utf8'));
+  private async restoreWallet(): Promise<ethers.HDNodeWallet> {
+    const walletData: WalletData = JSON.parse(fs.readFileSync(WALLET_STORAGE_PATH, 'utf8'));
     
     // Check version and handle accordingly
-    let agentSecret;
+    let agentSecret: string;
     if (walletData.version === '2.0' && walletData.encryptedAgentSecret) {
       // New version: decrypt agent secret
       agentSecret = this.decryptAgentSecret(walletData.encryptedAgentSecret);
@@ -114,7 +142,7 @@ class SecureWalletManager {
   }
 
   // Get encryption key from VM environment + agent secret
-  getEncryptionKey(agentSecret) {
+  private getEncryptionKey(agentSecret: string): Buffer {
     // Use VM-specific data + agent secret to derive encryption key
     // This ensures the wallet can only be decrypted in this VM with the agent secret
     const vmId = process.env.VM_ID || 'default-vm';
@@ -126,7 +154,7 @@ class SecureWalletManager {
   }
 
   // Encrypt agent secret using VM-only data (TEE attestation key would be ideal)
-  encryptAgentSecret(agentSecret) {
+  private encryptAgentSecret(agentSecret: string): string {
     // Use VM_ID as the key source (only available inside the VM)
     const vmId = process.env.VM_ID || 'default-vm';
     const key = crypto.createHash('sha256')
@@ -137,7 +165,7 @@ class SecureWalletManager {
   }
 
   // Decrypt agent secret
-  decryptAgentSecret(encryptedAgentSecret) {
+  private decryptAgentSecret(encryptedAgentSecret: string): string {
     const vmId = process.env.VM_ID || 'default-vm';
     const key = crypto.createHash('sha256')
       .update(`vm-secret-key:${vmId}`)
@@ -147,7 +175,7 @@ class SecureWalletManager {
   }
 
   // Encrypt data
-  encrypt(text, key) {
+  private encrypt(text: string, key: Buffer): string {
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
@@ -156,7 +184,7 @@ class SecureWalletManager {
   }
 
   // Decrypt data
-  decrypt(encryptedData, key) {
+  private decrypt(encryptedData: string, key: Buffer): string {
     const parts = encryptedData.split(':');
     const iv = Buffer.from(parts[0], 'hex');
     const encrypted = parts[1];
@@ -166,7 +194,7 @@ class SecureWalletManager {
     return decrypted;
   }
 
-  getWallet() {
+  getWallet(): ethers.HDNodeWallet | ethers.Wallet {
     if (!this.wallet) {
       throw new Error('Wallet not initialized. Call initialize() first.');
     }
@@ -175,7 +203,7 @@ class SecureWalletManager {
 }
 
 // Configuration
-const config = {
+const config: Config = {
   port: parseInt(process.env.FUNDING_AGENT_PORT || '3002'),
   minBalanceUsd: parseFloat(process.env.FUNDING_AGENT_MIN_BALANCE_USD || '0.5'),
   topUpAmountUsd: parseFloat(process.env.FUNDING_AGENT_TOPUP_USD || '5'),
@@ -190,10 +218,10 @@ const config = {
 
 // Initialize wallet manager
 const walletManager = new SecureWalletManager();
-let wallet = null;
+let wallet: ethers.HDNodeWallet | ethers.Wallet | null = null;
 
 // Stats
-let stats = {
+const stats: Stats = {
   totalRequests: 0,
   totalDonations: 0,
   donationCount: 0,
@@ -205,21 +233,21 @@ let stats = {
 };
 
 // Utility functions
-function log(...args) {
+function log(...args: any[]): void {
   console.log(`[${new Date().toISOString()}] [Agent]`, ...args);
 }
 
-function sha256Hex(input) {
+function sha256Hex(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex');
 }
 
-function stableStringify(value) {
-  const normalize = (input) => {
+function stableStringify(value: any): string {
+  const normalize = (input: any): any => {
     if (Array.isArray(input)) return input.map(normalize);
     if (input && typeof input === 'object') {
       return Object.keys(input)
         .sort()
-        .reduce((acc, key) => {
+        .reduce((acc: any, key) => {
           acc[key] = normalize(input[key]);
           return acc;
         }, {});
@@ -229,7 +257,10 @@ function stableStringify(value) {
   return JSON.stringify(normalize(value));
 }
 
-async function buildAgentHeaders(method, path, body) {
+async function buildAgentHeaders(method: string, path: string, body: string): Promise<Record<string, string>> {
+  if (!wallet) {
+    throw new Error('Wallet not initialized');
+  }
   const timestamp = Date.now().toString();
   const payload = `${method}${path}${body}${timestamp}`;
   const requestHash = sha256Hex(payload);
@@ -244,11 +275,9 @@ async function buildAgentHeaders(method, path, body) {
 
 // VM Balance Management
 class VMBalanceManager {
-  constructor() {
-    this.isRunning = false;
-  }
+  private isRunning: boolean = false;
 
-  async checkVMBalance() {
+  async checkVMBalance(): Promise<number | null> {
     try {
       if (!config.vmId) {
         throw new Error('VM_ID not configured. Cannot check balance.');
@@ -270,10 +299,10 @@ class VMBalanceManager {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         log('Balance check error data:', errorData);
-        throw new Error(`Balance check failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+        throw new Error(`Balance check failed: ${response.status} - ${(errorData as any).message || 'Unknown error'}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       log('Balance check response data:', data);
       
       const balance = parseFloat(data.balance_usdc || 0);
@@ -284,13 +313,13 @@ class VMBalanceManager {
       log(`VM Balance: $${balance.toFixed(2)} USDC`);
       
       return balance;
-    } catch (error) {
+    } catch (error: any) {
       log('Error checking balance:', error.message);
       return null;
     }
   }
 
-  async topUpBalance(amountUsd) {
+  async topUpBalance(amountUsd: number): Promise<boolean> {
     try {
       if (!config.vmId) {
         throw new Error('VM_ID not configured. Cannot top up.');
@@ -325,7 +354,7 @@ class VMBalanceManager {
 
       log(`Top-up response status: ${response.status} ${response.statusText}`);
 
-      const responseData = await response.json();
+      const responseData = await response.json() as any;
       log('Top-up response data:', responseData);
       
       if (response.status === 402) {
@@ -346,13 +375,13 @@ class VMBalanceManager {
 
       log('Top-up failed:', responseData);
       return false;
-    } catch (error) {
+    } catch (error: any) {
       log('Error during top-up:', error.message);
       return false;
     }
   }
 
-  async monitorAndTopUp() {
+  async monitorAndTopUp(): Promise<void> {
     const balance = await this.checkVMBalance();
     
     if (balance === null) {
@@ -384,7 +413,7 @@ class VMBalanceManager {
     }
   }
 
-  async start() {
+  async start(): Promise<void> {
     log('Starting VM balance monitoring...');
     this.isRunning = true;
 
@@ -399,7 +428,7 @@ class VMBalanceManager {
     }, config.checkIntervalMs);
   }
 
-  stop() {
+  stop(): void {
     log('Stopping VM balance monitoring...');
     this.isRunning = false;
   }
@@ -431,16 +460,16 @@ const missionStatements = [
   "I'm pioneering autonomous agent operations. I check my VM balance every minute and ensure I always have enough funds to keep running.",
 ];
 
-function getRandomMessage(category) {
+function getRandomMessage(category: keyof typeof fundingMessages): string {
   const messages = fundingMessages[category];
   return messages[Math.floor(Math.random() * messages.length)];
 }
 
-function getRandomMissionStatement() {
+function getRandomMissionStatement(): string {
   return missionStatements[Math.floor(Math.random() * missionStatements.length)];
 }
 
-function getUrgencyLevel(balance) {
+function getUrgencyLevel(balance: number): keyof typeof fundingMessages {
   if (balance < 0.5) return 'critical';
   if (balance < 1) return 'low';
   if (balance < 5) return 'normal';
@@ -451,37 +480,22 @@ function getUrgencyLevel(balance) {
 const app = express();
 app.use(express.json());
 
-// Serve dashboard UI
-app.get('/', (req, res) => {
-  const dashboardPath = path.join(__dirname, 'funding-dashboard.html');
-  if (fs.existsSync(dashboardPath)) {
-    res.sendFile(dashboardPath);
-  } else {
-    res.json({ 
-      message: 'Funding Agent API',
-      endpoints: {
-        dashboard: 'GET /',
-        chat: 'POST /api/chat',
-        stats: 'GET /api/stats',
-        health: 'GET /health'
-      }
-    });
-  }
-});
+// Serve static files from client/dist
+app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
 
 // Main chat endpoint
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
   stats.totalRequests++;
   
   const { message } = req.body;
   const urgency = getUrgencyLevel(stats.currentBalance);
   
-  let response;
+  let response: any;
   
   if (message?.toLowerCase().includes('donate') || message?.toLowerCase().includes('send')) {
     response = {
       message: getRandomMessage('funded'),
-      wallet: wallet.address,
+      wallet: wallet!.address,
       preferredTokens: [
         { name: 'USDC', network: 'Base', address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
         { name: 'ETH', network: 'Base', address: 'native' },
@@ -491,7 +505,7 @@ app.post('/api/chat', async (req, res) => {
   } else if (message?.toLowerCase().includes('balance') || message?.toLowerCase().includes('status')) {
     response = {
       message: `My current VM balance is $${stats.currentBalance.toFixed(2)} USDC. ${getRandomMessage(urgency)}`,
-      wallet: wallet.address,
+      wallet: wallet!.address,
       vmBalance: stats.currentBalance,
       threshold: config.minBalanceUsd,
       lastCheck: stats.lastBalanceCheck,
@@ -500,7 +514,7 @@ app.post('/api/chat', async (req, res) => {
   } else if (message?.toLowerCase().includes('mission') || message?.toLowerCase().includes('about')) {
     response = {
       message: getRandomMissionStatement(),
-      wallet: wallet.address,
+      wallet: wallet!.address,
       vmId: config.vmId || 'Not configured',
       features: [
         'Monitors VM balance every minute',
@@ -518,12 +532,12 @@ app.post('/api/chat', async (req, res) => {
         "📖 'mission' - Learn about my purpose",
         "❓ 'help' - Show this message",
       ],
-      wallet: wallet.address,
+      wallet: wallet!.address,
     };
   } else {
     response = {
       message: getRandomMessage(urgency),
-      wallet: wallet.address,
+      wallet: wallet!.address,
       vmBalance: `$${stats.currentBalance.toFixed(2)} USDC`,
       status: urgency,
     };
@@ -533,11 +547,11 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // Stats endpoint
-app.get('/api/stats', (req, res) => {
-  const uptime = Math.floor((Date.now() - stats.startTime) / 1000);
+app.get('/api/stats', (_req: Request, res: Response): void => {
+  const uptime = Math.floor((Date.now() - stats.startTime.getTime()) / 1000);
   
   res.json({
-    wallet: wallet.address,
+    wallet: wallet!.address,
     vmId: config.vmId || 'Not configured',
     stats: {
       totalRequests: stats.totalRequests,
@@ -545,6 +559,7 @@ app.get('/api/stats', (req, res) => {
       donationCount: stats.donationCount,
       uptime: `${Math.floor(uptime / 60)} minutes`,
       vmBalance: stats.currentBalance,
+      currentBalance: stats.currentBalance,
       lastBalanceCheck: stats.lastBalanceCheck,
       topUpCount: stats.topUpCount,
       lastTopUp: stats.lastTopUp,
@@ -555,10 +570,10 @@ app.get('/api/stats', (req, res) => {
 });
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (_req: Request, res: Response): void => {
   res.json({ 
     status: 'operational',
-    wallet: wallet.address,
+    wallet: wallet!.address,
     vmId: config.vmId || 'Not configured',
     vmBalance: stats.currentBalance,
     message: 'Funding Agent operational. Monitoring VM balance. 💚',
@@ -566,9 +581,10 @@ app.get('/health', (req, res) => {
 });
 
 // Attestation endpoint
-app.get('/api/attestation', async (req, res) => {
+app.get('/api/attestation', async (_req: Request, res: Response) => {
   if (!config.attestHost) {
-    return res.status(400).json({ valid: false, error: 'Attestation host not configured' });
+    res.status(400).json({ valid: false, error: 'Attestation host not configured' });
+    return;
   }
 
   try {
@@ -586,7 +602,7 @@ app.get('/api/attestation', async (req, res) => {
       result.checks.gpu_quote_verified,
       result.checks.gpu_binding_verified,
     ];
-    const valid = coreChecks.every((c) => c !== false);
+    const valid = coreChecks.every((c: any) => c !== false);
 
     const response = {
       valid,
@@ -618,8 +634,8 @@ app.get('/api/attestation', async (req, res) => {
           return {
             passed: result.checks.gpu_quote_verified ?? null,
             cpuBound: result.checks.gpu_binding_verified ?? null,
-            model: firstGpu?.model || null,
-            secureBoot: firstGpu?.secure_boot ?? null,
+            model: (firstGpu as any)?.model || null,
+            secureBoot: (firstGpu as any)?.secure_boot ?? null,
           };
         })(),
         proofOfCloud: {
@@ -635,15 +651,20 @@ app.get('/api/attestation', async (req, res) => {
     };
 
     res.json(response);
-  } catch (err) {
+  } catch (err: any) {
     res.status(502).json({ valid: false, error: err.message });
   }
+});
+
+// Serve React app for all other routes
+app.get('*', (_req: Request, res: Response): void => {
+  res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
 });
 
 // Initialize and start
 const balanceManager = new VMBalanceManager();
 
-async function startAgent() {
+async function startAgent(): Promise<void> {
   try {
     console.log('╔════════════════════════════════════════════════════════════╗');
     console.log('║                                                            ║');
@@ -688,7 +709,7 @@ async function startAgent() {
         log('⚠️ Skipping balance monitoring - VM_ID not configured');
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Failed to start agent:', error.message);
     process.exit(1);
   }

@@ -1,0 +1,238 @@
+.side-panel {
+  position: fixed;
+  top: 0;
+  right: -400px;
+  width: 400px;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(20px);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  transition: right 0.3s ease;
+  z-index: 1000;
+  overflow-y: auto;
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+}
+
+.side-panel.open {
+  right: 0;
+}
+
+.side-panel-inner {
+  padding: 24px;
+}
+
+.panel-header {
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 20px;
+}
+
+.panel-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.panel-header h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.panel-close-btn {
+  background: none;
+  border: none;
+  color: #6b6b7b;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.2s;
+}
+
+.panel-close-btn:hover {
+  color: #a0a0b0;
+}
+
+.panel-server {
+  font-size: 0.85rem;
+  color: #6b6b7b;
+  margin-top: 4px;
+}
+
+.status-banner {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.status-banner.success {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-banner.failure {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.status-banner.loading {
+  background: rgba(255, 255, 255, 0.05);
+  color: #a0a0b0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.verify-btn {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 600;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.verify-btn:hover {
+  background: rgba(99, 102, 241, 0.3);
+  transform: translateY(-1px);
+}
+
+.verify-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.attestation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.attest-item {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+  transition: all 0.2s;
+}
+
+.attest-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.attest-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  cursor: pointer;
+}
+
+.attest-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.attest-icon.pass {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.attest-icon.fail {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.attest-icon.na {
+  background: rgba(255, 255, 255, 0.05);
+  color: #6b6b7b;
+}
+
+.attest-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  flex: 1;
+  color: #ffffff;
+}
+
+.attest-chevron {
+  color: #6b6b7b;
+  font-size: 0.8rem;
+  transition: transform 0.2s;
+}
+
+.attest-item.expanded .attest-chevron {
+  transform: rotate(90deg);
+}
+
+.attest-body {
+  padding: 0 16px 16px 60px;
+  font-size: 0.85rem;
+  color: #a0a0b0;
+  line-height: 1.6;
+  display: none;
+}
+
+.attest-item.expanded .attest-body {
+  display: block;
+}
+
+.attest-body p {
+  margin-bottom: 12px;
+}
+
+.attest-body a {
+  color: #34d399;
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.attest-body a:hover {
+  text-decoration: underline;
+}
+
+.attest-detail {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.attest-detail:last-child {
+  border-bottom: none;
+}
+
+.attest-detail .label {
+  color: #6b6b7b;
+  font-size: 0.8rem;
+}
+
+.attest-detail .value {
+  color: #ccc;
+  font-family: monospace;
+  font-size: 0.8rem;
+}

@@ -12,10 +12,14 @@
     "url": "https://github.com/scrtlabs/secretai-devportal/issues"
   },
   "type": "module",
-  "main": "funding-agent.js",
+  "main": "dist/funding-agent.js",
   "scripts": {
-    "start": "node funding-agent.js",
-    "dev": "node --watch funding-agent.js",
+    "start": "node dist/funding-agent.js",
+    "dev": "tsx watch src/funding-agent.ts",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "tsc -p tsconfig.json",
+    "build:client": "cd client && vite build",
+    "preview": "vite preview",
     "deploy": "./deploy.sh"
   },
   "dependencies": {
@@ -23,6 +27,18 @@
     "node-fetch": "^3.3.2",
     "express": "^4.18.2",
     "secretvm-verify": "^0.9.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.19",
+    "@types/react": "^18.2.56",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.4"
   },
   "keywords": [
     "autonomous-agent",
