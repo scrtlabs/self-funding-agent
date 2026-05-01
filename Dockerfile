@@ -17,6 +17,7 @@ RUN npm install
 # Copy source code
 COPY src ./src
 COPY client ./client
+COPY generate-build-info.sh ./
 
 # Build TypeScript server and React client
 RUN npm run build
