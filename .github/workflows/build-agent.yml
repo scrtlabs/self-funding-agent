@@ -72,3 +72,83 @@ jobs:
           path: |
             docker-compose.yml
             README.md
+
+  deploy-to-vm:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Extract image tag
+        id: image-tag
+        run: |
+          # Extract the short SHA tag (e.g., master-bd5afed)
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}"
+          echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "Image tag: ${IMAGE_TAG}"
+
+      - name: Fetch VM details
+        id: vm-details
+        run: |
+          RESPONSE=$(curl -s -X GET \
+            "${{ secrets.DEVPORTAL_API_URL }}/api/vms/${{ secrets.VM_ID }}" \
+            -H "Authorization: Bearer ${{ secrets.DEVPORTAL_API_KEY }}" \
+            -H "Content-Type: application/json")
+          
+          echo "VM Details Response:"
+          echo "$RESPONSE"
+          
+          # Extract docker-compose content
+          DOCKER_COMPOSE=$(echo "$RESPONSE" | jq -r '.dockerCompose // .docker_compose // .dockerComposeYml // empty')
+          
+          if [ -z "$DOCKER_COMPOSE" ]; then
+            echo "Error: Could not extract docker-compose from response"
+            exit 1
+          fi
+          
+          # Save to file for next step
+          echo "$DOCKER_COMPOSE" > docker-compose-current.yml
+          echo "Current docker-compose saved"
+
+      - name: Update docker-compose image tag
+        id: update-compose
+        run: |
+          # Read current docker-compose
+          CURRENT_COMPOSE=$(cat docker-compose-current.yml)
+          
+          # Update the image tag using sed
+          NEW_IMAGE="ghcr.io/scrtlabs/self-funding-agent:${{ steps.image-tag.outputs.tag }}"
+          UPDATED_COMPOSE=$(echo "$CURRENT_COMPOSE" | sed -E "s|image: ghcr.io/scrtlabs/self-funding-agent:[^ ]*|image: ${NEW_IMAGE}|g")
+          
+          echo "Updated docker-compose:"
+          echo "$UPDATED_COMPOSE"
+          
+          # Save updated compose
+          echo "$UPDATED_COMPOSE" > docker-compose-updated.yml
+          
+          # Prepare JSON payload (escape newlines and quotes)
+          COMPOSE_JSON=$(echo "$UPDATED_COMPOSE" | jq -Rs .)
+          echo "compose=${COMPOSE_JSON}" >> $GITHUB_OUTPUT
+
+      - name: Apply docker-compose changes to VM
+        run: |
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X PUT \
+            "${{ secrets.DEVPORTAL_API_URL }}/api/vms/${{ secrets.VM_ID }}" \
+            -H "Authorization: Bearer ${{ secrets.DEVPORTAL_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"dockerCompose\": ${{ steps.update-compose.outputs.compose }}}")
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+          
+          echo "Response status: ${HTTP_STATUS}"
+          echo "Response body: ${BODY}"
+          
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✅ Successfully updated VM docker-compose with image tag: ${{ steps.image-tag.outputs.tag }}"
+          else
+            echo "❌ Failed to update VM docker-compose"
+            exit 1
+          fi
