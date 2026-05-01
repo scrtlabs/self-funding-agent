@@ -133,14 +133,19 @@ jobs:
           # Read the updated docker-compose and encode to base64
           DOCKER_COMPOSE_BASE64=$(cat docker-compose-updated.yml | base64 -w 0)
           
+          # Create upgrade description with timestamp
+          UPGRADE_DESC="Automated deployment of image tag ${{ steps.image-tag.outputs.tag }} on $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          
           # Create JSON payload with required fields
           jq -n \
             --arg name "agent" \
             --arg dockerComposeBase64 "$DOCKER_COMPOSE_BASE64" \
+            --arg description "$UPGRADE_DESC" \
             '{
               name: $name,
               dockerComposeBase64: $dockerComposeBase64,
-              userBroadcastServiceMsgs: false
+              userBroadcastServiceMsgs: false,
+              description: $description
             }' > payload.json
           
           echo "Payload created (docker-compose is base64 encoded)"
