@@ -188,33 +188,23 @@ export class ApiKeyFetcher {
         return;
       }
 
-      console.log('[ApiKeyFetcher] Storage is empty, fetching API keys from endpoint...');
+      console.log('[ApiKeyFetcher] Storage is empty, creating new API key...');
 
-      // Fetch API keys from endpoint
-      const apiKeys = await this.fetchApiKeys();
-
-      if (apiKeys.length === 0) {
-        console.log('[ApiKeyFetcher] No API keys found on endpoint');
-        console.log('[ApiKeyFetcher] Creating new API key for agent...');
-        
-        // Create a new API key
-        const keyName = `agent-${this.wallet.address.substring(0, 10)}-${Date.now()}`;
-        const newApiKey = await this.createApiKey(keyName);
-        
-        // Store the new API key
-        await this.storage.setKey(keyName, newApiKey);
-        console.log(`[ApiKeyFetcher] ✅ Stored new API key: ${keyName}`);
-        
-        return;
+      // Always create a new API key instead of fetching from endpoint
+      // The endpoint returns short keys that don't work with SecretAI
+      const keyName = `agent-${this.wallet.address.substring(0, 10)}-${Date.now()}`;
+      console.log('[ApiKeyFetcher] Creating new API key:', keyName);
+      
+      const newApiKey = await this.createApiKey(keyName);
+      
+      // Verify the key is the correct length (should be ~81 chars for SecretAI)
+      if (newApiKey.length < 50) {
+        console.warn(`[ApiKeyFetcher] ⚠️  API key seems too short (${newApiKey.length} chars). Expected ~81 chars.`);
       }
-
-      // Store each API key
-      for (const keyDetail of apiKeys) {
-        await this.storage.setKey(keyDetail.name, keyDetail.api_key);
-        console.log(`[ApiKeyFetcher] Stored API key: ${keyDetail.name}`);
-      }
-
-      console.log(`[ApiKeyFetcher] ✅ Successfully stored ${apiKeys.length} API key(s)`);
+      
+      // Store the new API key
+      await this.storage.setKey(keyName, newApiKey);
+      console.log(`[ApiKeyFetcher] ✅ Stored new API key: ${keyName}`);
     } catch (error: any) {
       console.error('[ApiKeyFetcher] Failed to fetch and store API keys:', error.message);
       throw error;
