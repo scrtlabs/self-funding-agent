@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Secure wallet storage path (persistent volume in VM)
-const WALLET_STORAGE_PATH = process.env.WALLET_STORAGE_PATH || '/data/agent-wallet.json';
+const WALLET_STORAGE_PATH = process.env.WALLET_STORAGE_PATH || path.join(__dirname, 'data', 'agent-wallet.json');
 
 // Wallet Management
 class SecureWalletManager {
@@ -355,16 +355,24 @@ class VMBalanceManager {
 
     if (balance < config.minBalanceUsd) {
       log(`⚠️ Balance below threshold! ($${balance.toFixed(2)} < $${config.minBalanceUsd})`);
-      log(`Attempting to top up $${config.topUpAmountUsd} USDC...`);
       
-      const success = await this.topUpBalance(config.topUpAmountUsd);
+      // Get current wallet balance to top up with full amount
+      const walletBalance = stats.currentBalance || 0;
+      
+      if (walletBalance <= 0) {
+        log(`❌ Wallet balance is empty ($${walletBalance.toFixed(2)}). Cannot top up.`);
+        return;
+      }
+      
+      log(`Attempting to top up with full wallet balance: $${walletBalance.toFixed(2)} USDC...`);
+      
+      const success = await this.topUpBalance(walletBalance);
       
       if (success) {
         // Check new balance
         await this.checkVMBalance();
       }
     } else {
-      log(`TEST UPDATE`);
       log(`✅ Balance OK ($${balance.toFixed(2)} >= $${config.minBalanceUsd})`);
     }
   }
