@@ -136,14 +136,21 @@ export class ApiKeyFetcher {
 
       const data: any = await response.json();
 
-      if (!data.apiKey) {
+      console.log(`[ApiKeyFetcher] Create API key response:`, JSON.stringify(data, null, 2));
+
+      // The response might have apiKey or api_key
+      const apiKey = data.apiKey || data.api_key;
+      
+      if (!apiKey) {
         throw new Error('API key not found in response');
       }
 
       console.log(`[ApiKeyFetcher] ✅ API key created successfully`);
-      console.log(`[ApiKeyFetcher] Transaction hash: ${data.transactionHash}`);
+      if (data.transactionHash) {
+        console.log(`[ApiKeyFetcher] Transaction hash: ${data.transactionHash}`);
+      }
 
-      return data.apiKey;
+      return apiKey;
     } catch (error: any) {
       console.error('[ApiKeyFetcher] Error creating API key:', error.message);
       throw error;

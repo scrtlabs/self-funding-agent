@@ -16,6 +16,7 @@
   "scripts": {
     "start": "node dist/funding-agent.js",
     "dev": "tsx watch src/funding-agent.ts",
+    "prebuild": "./generate-build-info.sh",
     "build": "npm run build:server && npm run build:client",
     "build:server": "tsc -p tsconfig.json",
     "build:client": "cd client && vite build",

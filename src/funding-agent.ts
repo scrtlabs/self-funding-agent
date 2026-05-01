@@ -4,11 +4,12 @@ import fetch from 'node-fetch';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { PassThrough } from 'stream';
 import { fileURLToPath } from 'url';
+import { PassThrough } from 'stream';
 import { ApiKeyStorageManager } from './api-key-storage.js';
 import { ApiKeyFetcher } from './api-key-fetcher.js';
 import { SecretAiClient } from './secretai-client.js';
+import buildInfo from './build-info.json' assert { type: 'json' };
 import { ChatHistoryRecord, OnchainChatStorage } from './onchain-chat-storage.js';
 
 // Get __dirname equivalent in ES modules
@@ -852,6 +853,13 @@ app.get('/api/stats', (_req: Request, res: Response): void => {
       available: secretAiClient?.hasApiKey() || false,
       apiKeyName: secretAiClient?.getCurrentApiKeyName() || null,
     },
+    version: {
+      version: buildInfo.version,
+      commit: buildInfo.gitCommit,
+      branch: buildInfo.gitBranch,
+      tag: buildInfo.gitTag || null,
+      buildTime: buildInfo.buildTime,
+    },
     message: "Autonomous VM balance management operational. 💚",
   });
 });
@@ -863,6 +871,10 @@ app.get('/health', (_req: Request, res: Response): void => {
     wallet: wallet!.address,
     vmId: config.vmId || 'Not configured',
     vmBalance: stats.vmBalance,
+    version: buildInfo.version,
+    build: buildInfo.gitCommit,
+    tag: buildInfo.gitTag || null,
+    buildTime: buildInfo.buildTime,
     message: 'Funding Agent operational. Monitoring VM balance. 💚',
   });
 });
