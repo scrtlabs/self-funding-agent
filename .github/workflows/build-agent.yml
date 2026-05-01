@@ -93,7 +93,7 @@ jobs:
         id: vm-details
         run: |
           RESPONSE=$(curl -s -X GET \
-            "${{ secrets.DEVPORTAL_API_URL }}/api/vms/${{ secrets.VM_ID }}" \
+            "${{ secrets.DEVPORTAL_API_URL }}/api/vm/${{ secrets.VM_ID }}" \
             -H "Authorization: Bearer ${{ secrets.DEVPORTAL_API_KEY }}" \
             -H "Content-Type: application/json")
           
@@ -135,7 +135,7 @@ jobs:
       - name: Apply docker-compose changes to VM
         run: |
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X PUT \
-            "${{ secrets.DEVPORTAL_API_URL }}/api/vms/${{ secrets.VM_ID }}" \
+            "${{ secrets.DEVPORTAL_API_URL }}/api/vm/${{ secrets.VM_ID }}" \
             -H "Authorization: Bearer ${{ secrets.DEVPORTAL_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d "{\"dockerCompose\": ${{ steps.update-compose.outputs.compose }}}")
