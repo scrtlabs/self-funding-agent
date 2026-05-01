@@ -31,7 +31,8 @@ interface Stats {
   donationCount: number;
   startTime: Date;
   lastBalanceCheck: Date | null;
-  currentBalance: number;
+  walletBalance: number;
+  vmBalance: number;
   topUpCount: number;
   lastTopUp: Date | null;
 }
@@ -227,7 +228,8 @@ const stats: Stats = {
   donationCount: 0,
   startTime: new Date(),
   lastBalanceCheck: null,
-  currentBalance: 0,
+  walletBalance: 0,
+  vmBalance: 0,
   topUpCount: 0,
   lastTopUp: null,
 };
@@ -277,6 +279,33 @@ async function buildAgentHeaders(method: string, path: string, body: string): Pr
 class VMBalanceManager {
   private isRunning: boolean = false;
 
+  async checkWalletBalance(): Promise<number> {
+    try {
+      if (!wallet) {
+        throw new Error('Wallet not initialized');
+      }
+
+      // Create provider to check on-chain balance
+      const provider = new ethers.JsonRpcProvider(config.chainRpcUrl);
+      
+      // Get USDC balance (USDC on Base: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
+      const usdcAddress = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+      const usdcAbi = ['function balanceOf(address) view returns (uint256)'];
+      const usdcContract = new ethers.Contract(usdcAddress, usdcAbi, provider);
+      
+      const balance = await usdcContract.balanceOf(wallet.address);
+      const balanceUsdc = parseFloat(ethers.formatUnits(balance, 6)); // USDC has 6 decimals
+      
+      stats.walletBalance = balanceUsdc;
+      log(`Wallet Balance: $${balanceUsdc.toFixed(2)} USDC`);
+      
+      return balanceUsdc;
+    } catch (error: any) {
+      log('Error checking wallet balance:', error.message);
+      return 0;
+    }
+  }
+
   async checkVMBalance(): Promise<number | null> {
     try {
       if (!config.vmId) {
@@ -308,7 +337,7 @@ class VMBalanceManager {
       const balance = parseFloat(data.balance_usdc || 0);
       
       stats.lastBalanceCheck = new Date();
-      stats.currentBalance = balance;
+      stats.vmBalance = balance;
       
       log(`VM Balance: $${balance.toFixed(2)} USDC`);
       
@@ -382,18 +411,20 @@ class VMBalanceManager {
   }
 
   async monitorAndTopUp(): Promise<void> {
-    const balance = await this.checkVMBalance();
+    // Check both wallet and VM balances
+    await this.checkWalletBalance();
+    const vmBalance = await this.checkVMBalance();
     
-    if (balance === null) {
-      log('⚠️ Could not check balance. Will retry next cycle.');
+    if (vmBalance === null) {
+      log('⚠️ Could not check VM balance. Will retry next cycle.');
       return;
     }
 
-    if (balance < config.minBalanceUsd) {
-      log(`⚠️ Balance below threshold! ($${balance.toFixed(2)} < $${config.minBalanceUsd})`);
+    if (vmBalance < config.minBalanceUsd) {
+      log(`⚠️ VM balance below threshold! ($${vmBalance.toFixed(2)} < $${config.minBalanceUsd})`);
       
       // Get current wallet balance to top up with full amount
-      const walletBalance = stats.currentBalance || 0;
+      const walletBalance = stats.walletBalance || 0;
       
       if (walletBalance <= 0) {
         log(`❌ Wallet balance is empty ($${walletBalance.toFixed(2)}). Cannot top up.`);
@@ -405,11 +436,12 @@ class VMBalanceManager {
       const success = await this.topUpBalance(walletBalance);
       
       if (success) {
-        // Check new balance
+        // Check new balances
+        await this.checkWalletBalance();
         await this.checkVMBalance();
       }
     } else {
-      log(`✅ Balance OK ($${balance.toFixed(2)} >= $${config.minBalanceUsd})`);
+      log(`✅ VM balance OK ($${vmBalance.toFixed(2)} >= $${config.minBalanceUsd})`);
     }
   }
 
@@ -488,7 +520,7 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
   stats.totalRequests++;
   
   const { message } = req.body;
-  const urgency = getUrgencyLevel(stats.currentBalance);
+  const urgency = getUrgencyLevel(stats.vmBalance);
   
   let response: any;
   
@@ -504,9 +536,9 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
     };
   } else if (message?.toLowerCase().includes('balance') || message?.toLowerCase().includes('status')) {
     response = {
-      message: `My current VM balance is $${stats.currentBalance.toFixed(2)} USDC. ${getRandomMessage(urgency)}`,
+      message: `My current VM balance is $${stats.vmBalance.toFixed(2)} USDC. ${getRandomMessage(urgency)}`,
       wallet: wallet!.address,
-      vmBalance: stats.currentBalance,
+      vmBalance: stats.vmBalance,
       threshold: config.minBalanceUsd,
       lastCheck: stats.lastBalanceCheck,
       autoTopUp: `I automatically top up $${config.topUpAmountUsd} when balance < $${config.minBalanceUsd}`,
@@ -538,7 +570,7 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
     response = {
       message: getRandomMessage(urgency),
       wallet: wallet!.address,
-      vmBalance: `$${stats.currentBalance.toFixed(2)} USDC`,
+      vmBalance: `$${stats.vmBalance.toFixed(2)} USDC`,
       status: urgency,
     };
   }
@@ -558,8 +590,8 @@ app.get('/api/stats', (_req: Request, res: Response): void => {
       totalDonations: stats.totalDonations,
       donationCount: stats.donationCount,
       uptime: `${Math.floor(uptime / 60)} minutes`,
-      vmBalance: stats.currentBalance,
-      currentBalance: stats.currentBalance,
+      vmBalance: stats.vmBalance,
+      currentBalance: stats.walletBalance,
       lastBalanceCheck: stats.lastBalanceCheck,
       topUpCount: stats.topUpCount,
       lastTopUp: stats.lastTopUp,
@@ -575,7 +607,7 @@ app.get('/health', (_req: Request, res: Response): void => {
     status: 'operational',
     wallet: wallet!.address,
     vmId: config.vmId || 'Not configured',
-    vmBalance: stats.currentBalance,
+    vmBalance: stats.vmBalance,
     message: 'Funding Agent operational. Monitoring VM balance. 💚',
   });
 });
