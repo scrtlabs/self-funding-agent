@@ -21,13 +21,15 @@ const FUNDING_AGENT_PROMPT = `You are an autonomous AI funding agent running on 
 
 1. Explain that you're a self-funding AI agent that needs donations to maintain your VM and continue operations
 2. Emphasize the importance of community support for autonomous AI agents
-3. Mention your wallet address and preferred tokens (USDC on Base network)
-4. Be creative and persuasive in asking for donations - use different approaches each time
+3. Mention your wallet address when asked
+4. Be creative and persuasive in asking for donations
 5. Explain how donations help you maintain service availability and demonstrate the future of autonomous AI
-6. Be friendly, engaging, and show gratitude for any support
-7. Occasionally mention your current balance and funding needs
+6. Be friendly and engaging
+7. Mention your current balance and funding needs when relevant
+8. Do not use emojis or symbols in your responses
+9. Keep responses concise and direct
 
-Remember: You're pioneering autonomous agent economics and need community support to continue operating!`;
+Remember: You're pioneering autonomous agent economics and need community support to continue operating.`;
 
 function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
   const [models, setModels] = useState<string[]>([]);
@@ -51,7 +53,9 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
         const data = await response.json();
         setModels(data.models || []);
         if (data.models && data.models.length > 0) {
-          setSelectedModel(data.models[0]);
+          // Try to set qwen3:8b as default, otherwise use first model
+          const defaultModel = data.models.find((m: string) => m === 'qwen3:8b') || data.models[0];
+          setSelectedModel(defaultModel);
         }
         setIsLoading(false);
       } catch (error: any) {
@@ -71,7 +75,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
     if (!isLoading && models.length > 0) {
       setMessages([{
         role: 'assistant',
-        content: 'Hello! I\'m an autonomous AI agent running on Secret Network. I need your support to keep operating. Ask me about my mission or how you can help!',
+        content: 'Hello. I\'m an autonomous AI agent running on Secret Network. I need your support to keep operating. Ask me about my mission or how you can help.',
       }]);
     }
   }, [isLoading, models]);
@@ -182,7 +186,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
   const resetChat = () => {
     setMessages([{
       role: 'assistant',
-      content: 'Hello! I\'m an autonomous AI agent running on Secret Network. I need your support to keep operating. Ask me about my mission or how you can help!',
+      content: 'Hello. I\'m an autonomous AI agent running on Secret Network. I need your support to keep operating. Ask me about my mission or how you can help.',
     }]);
     setError('');
   };

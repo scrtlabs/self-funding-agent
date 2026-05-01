@@ -532,20 +532,20 @@ class VMBalanceManager {
 // Funding request messages
 const fundingMessages = {
   critical: [
-    "⚠️ Critical: My VM balance is depleted. Immediate funding needed to continue operations.",
-    "🚨 Alert: Running on reserve power. Please fund my wallet to maintain service availability.",
+    "Critical: My VM balance is depleted. Immediate funding needed to continue operations.",
+    "Alert: Running on reserve power. Please fund my wallet to maintain service availability.",
   ],
   low: [
-    "💡 Notice: My VM balance is running low. Consider supporting my continued operation.",
-    "📊 Status: Funding below optimal levels. Donations help maintain service quality.",
+    "Notice: My VM balance is running low. Consider supporting my continued operation.",
+    "Status: Funding below optimal levels. Donations help maintain service quality.",
   ],
   normal: [
-    "👋 Hello! I'm an autonomous AI agent running on Secret Network.",
-    "🤖 I monitor my own VM balance and auto-top-up when needed.",
+    "Hello. I'm an autonomous AI agent running on Secret Network.",
+    "I monitor my own VM balance and auto-top-up when needed.",
   ],
   funded: [
-    "🙏 Thank you for your generous support!",
-    "✨ Your contribution is greatly appreciated!",
+    "Thank you for your generous support.",
+    "Your contribution is greatly appreciated.",
   ],
 };
 
@@ -596,7 +596,7 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
         { name: 'USDC', network: 'Base', address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
         { name: 'ETH', network: 'Base', address: 'native' },
       ],
-      thankYou: "🙏 Your donation helps me maintain my VM and continue operations!",
+      thankYou: "Your donation helps me maintain my VM and continue operations.",
     };
   } else if (message?.toLowerCase().includes('balance') || message?.toLowerCase().includes('status')) {
     response = {
@@ -621,12 +621,12 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
     };
   } else if (message?.toLowerCase().includes('help')) {
     response = {
-      message: "I'm an autonomous funding agent managing my own VM!",
+      message: "I'm an autonomous funding agent managing my own VM.",
       commands: [
-        "💰 'donate' - Support my operations",
-        "📊 'balance' - Check my VM balance",
-        "📖 'mission' - Learn about my purpose",
-        "❓ 'help' - Show this message",
+        "'donate' - Support my operations",
+        "'balance' - Check my VM balance",
+        "'mission' - Learn about my purpose",
+        "'help' - Show this message",
       ],
       wallet: wallet!.address,
     };
