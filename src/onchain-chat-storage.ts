@@ -41,8 +41,8 @@ export class OnchainChatStorage {
   }
 
   static fromEnv(logger: Logger = console.log): OnchainChatStorage {
-    const endpoint = (process.env.AUTONOMYS_S3_ENDPOINT || '').trim();
-    const bucket = (process.env.AUTONOMYS_S3_BUCKET || '').trim();
+    let endpoint = (process.env.AUTONOMYS_S3_ENDPOINT || '').trim();
+    let bucket = (process.env.AUTONOMYS_S3_BUCKET || '').trim();
     const accessKeyId = (process.env.AUTONOMYS_S3_ACCESS_KEY_ID || '').trim();
     const secretAccessKey = (process.env.AUTONOMYS_S3_SECRET_ACCESS_KEY || '').trim();
     const region = (process.env.AUTONOMYS_S3_REGION || 'us-east-1').trim();
@@ -60,6 +60,28 @@ export class OnchainChatStorage {
     );
     const enabledFlag = (process.env.AUTONOMYS_CHAT_HISTORY_ENABLED || 'false').toLowerCase() === 'true';
 
+    if (bucket && /^https?:\/\//i.test(bucket)) {
+      if (endpoint) {
+        logger('[OnchainChatStorage] AUTONOMYS_S3_BUCKET is a URL; overriding AUTONOMYS_S3_ENDPOINT.');
+      }
+      endpoint = bucket;
+      bucket = '';
+    }
+
+    if (endpoint && bucket) {
+      try {
+        const endpointUrl = new URL(endpoint);
+        const endpointPath = endpointUrl.pathname.replace(/^\/+|\/+$/g, '');
+        const bucketPath = bucket.replace(/^\/+|\/+$/g, '');
+        if (endpointPath && (endpointPath === bucketPath || endpointPath.endsWith(`/${bucketPath}`))) {
+          logger('[OnchainChatStorage] Bucket path is already included in endpoint; ignoring AUTONOMYS_S3_BUCKET.');
+          bucket = '';
+        }
+      } catch (error: unknown) {
+        logger('[OnchainChatStorage] Invalid AUTONOMYS_S3_ENDPOINT URL; leaving bucket configuration unchanged.');
+      }
+    }
+
     const hasRequiredConfig = Boolean(endpoint && accessKeyId);
     const enabled = enabledFlag && hasRequiredConfig;
 
@@ -68,7 +90,7 @@ export class OnchainChatStorage {
     }
 
     if (enabledFlag && endpoint && accessKeyId && !secretAccessKey) {
-      logger('[OnchainChatStorage] AUTONOMYS_S3_SECRET_ACCESS_KEY is empty. Proceeding with empty secret (Auto Drive-style auth).');
+      logger('[OnchainChatStorage] AUTONOMYS_S3_SECRET_ACCESS_KEY is empty. Using SigV4 with empty secret (Auto Drive auth).');
     }
 
     return new OnchainChatStorage({
@@ -166,90 +188,67 @@ export class OnchainChatStorage {
       `[OnchainChatStorage] Uploading chat history to ${requestUrl} (bucket=${this.options.bucket || '(none)'}, key=${objectKey})`,
     );
 
-    // Check if we should use Autonomys-style auth (API key only) or AWS SigV4
-    const useAutonomysAuth = !this.options.secretAccessKey || this.options.secretAccessKey.length === 0;
+    // Standard AWS S3 Signature V4 authentication (Auto Drive expects SigV4 even with empty secret)
+    const amzDate = this.toAmzDate(new Date());
+    const dateStamp = amzDate.slice(0, 8);
+    const payloadHash = this.sha256Hex(payload);
+    const host = endpoint.host;
 
-    if (useAutonomysAuth) {
-      // Autonomys Auto Drive: simple API key authentication
-      const response = await fetch(requestUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.options.accessKeyId}`,
-        },
-        body: payload,
-      });
+    const canonicalHeaders = [
+      'content-type:application/json',
+      `host:${host}`,
+      `x-amz-content-sha256:${payloadHash}`,
+      `x-amz-date:${amzDate}`,
+    ].join('\n') + '\n';
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new AutonomysUploadError(
-          `Autonomys upload failed: ${response.status} ${response.statusText} ${errorText}`.trim(),
-          response.status,
-        );
-      }
-    } else {
-      // Standard AWS S3 Signature V4 authentication
-      const amzDate = this.toAmzDate(new Date());
-      const dateStamp = amzDate.slice(0, 8);
-      const payloadHash = this.sha256Hex(payload);
-      const host = endpoint.host;
+    const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
+    const canonicalRequest = [
+      'PUT',
+      fullPath,
+      '',
+      canonicalHeaders,
+      signedHeaders,
+      payloadHash,
+    ].join('\n');
 
-      const canonicalHeaders = [
-        'content-type:application/json',
-        `host:${host}`,
-        `x-amz-content-sha256:${payloadHash}`,
-        `x-amz-date:${amzDate}`,
-      ].join('\n') + '\n';
+    const credentialScope = `${dateStamp}/${this.options.region}/s3/aws4_request`;
+    const stringToSign = [
+      'AWS4-HMAC-SHA256',
+      amzDate,
+      credentialScope,
+      this.sha256Hex(canonicalRequest),
+    ].join('\n');
 
-      const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
-      const canonicalRequest = [
-        'PUT',
-        fullPath,
-        '',
-        canonicalHeaders,
-        signedHeaders,
-        payloadHash,
-      ].join('\n');
+    const signingKey = this.getSignatureKey(
+      this.options.secretAccessKey,
+      dateStamp,
+      this.options.region,
+      's3',
+    );
+    const signature = crypto
+      .createHmac('sha256', signingKey)
+      .update(stringToSign, 'utf8')
+      .digest('hex');
+    const authorization = `AWS4-HMAC-SHA256 Credential=${this.options.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-      const credentialScope = `${dateStamp}/${this.options.region}/s3/aws4_request`;
-      const stringToSign = [
-        'AWS4-HMAC-SHA256',
-        amzDate,
-        credentialScope,
-        this.sha256Hex(canonicalRequest),
-      ].join('\n');
+    const response = await fetch(requestUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Host: host,
+        'x-amz-content-sha256': payloadHash,
+        'x-amz-date': amzDate,
+        Authorization: authorization,
+      },
+      body: payload,
+    });
 
-      const signingKey = this.getSignatureKey(
-        this.options.secretAccessKey,
-        dateStamp,
-        this.options.region,
-        's3',
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new AutonomysUploadError(
+        `Autonomys upload failed: ${response.status} ${response.statusText} ${errorText}`.trim(),
+        response.status,
       );
-      const signature = crypto
-        .createHmac('sha256', signingKey)
-        .update(stringToSign, 'utf8')
-        .digest('hex');
-      const authorization = `AWS4-HMAC-SHA256 Credential=${this.options.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-      const response = await fetch(requestUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Host: host,
-          'x-amz-content-sha256': payloadHash,
-          'x-amz-date': amzDate,
-          Authorization: authorization,
-        },
-        body: payload,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new AutonomysUploadError(
-          `Autonomys upload failed: ${response.status} ${response.statusText} ${errorText}`.trim(),
-          response.status,
-        );
-      }
     }
   }
 
