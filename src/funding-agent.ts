@@ -329,7 +329,8 @@ async function buildAgentHeaders(method: string, path: string, body: string): Pr
     throw new Error('Wallet not initialized');
   }
   const timestamp = Date.now().toString();
-  const payload = `${method}${path}${body}${timestamp}`;
+  const signaturePath = path.split('?')[0];
+  const payload = `${method}${signaturePath}${body}${timestamp}`;
   const requestHash = sha256Hex(payload);
   const signature = await wallet.signMessage(ethers.getBytes(`0x${requestHash}`));
 

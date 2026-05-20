@@ -48,7 +48,8 @@ export class SecretAiClient {
    */
   private async buildAgentHeaders(method: string, path: string, body: string): Promise<Record<string, string>> {
     const timestamp = Date.now().toString();
-    const payload = `${method}${path}${body}${timestamp}`;
+    const signaturePath = path.split('?')[0];
+    const payload = `${method}${signaturePath}${body}${timestamp}`;
     const requestHash = this.sha256Hex(payload);
     const signature = await this.wallet.signMessage(ethers.getBytes(`0x${requestHash}`));
 
