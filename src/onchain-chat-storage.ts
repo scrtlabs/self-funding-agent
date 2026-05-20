@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import fetch from 'node-fetch';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 export interface ChatHistoryRecord {
   requestId: string;
@@ -31,10 +31,12 @@ type Logger = (...args: any[]) => void;
 
 /**
  * Persists chat transcripts to Autonomys Auto Drive via the S3-compatible API.
- * Uses AWS Signature V4 so no extra SDK dependency is required.
+ * Uses the AWS S3 SDK configured for Auto Drive.
  */
 export class OnchainChatStorage {
   private readonly options: OnchainChatStorageOptions;
+  private s3Client: S3Client | null = null;
+  private s3Bucket: string | null = null;
 
   constructor(options: OnchainChatStorageOptions) {
     this.options = options;
@@ -60,15 +62,23 @@ export class OnchainChatStorage {
     );
     const enabledFlag = (process.env.AUTONOMYS_CHAT_HISTORY_ENABLED || 'false').toLowerCase() === 'true';
 
-    if (bucket && /^https?:\/\//i.test(bucket)) {
+    const isBucketUrl = (value: string): boolean => /^https?:\/\//i.test(value);
+
+    if (bucket && isBucketUrl(bucket)) {
       if (endpoint) {
-        logger('[OnchainChatStorage] AUTONOMYS_S3_BUCKET is a URL; overriding AUTONOMYS_S3_ENDPOINT.');
+        logger('[OnchainChatStorage] AUTONOMYS_S3_BUCKET is a URL; ignoring AUTONOMYS_S3_ENDPOINT.');
       }
-      endpoint = bucket;
-      bucket = '';
+      endpoint = '';
     }
 
-    if (endpoint && bucket) {
+    if (!bucket && endpoint) {
+      bucket = endpoint;
+      endpoint = '';
+    }
+
+    const bucketIsUrl = bucket ? isBucketUrl(bucket) : false;
+
+    if (endpoint && bucket && !bucketIsUrl) {
       try {
         const endpointUrl = new URL(endpoint);
         const endpointPath = endpointUrl.pathname.replace(/^\/+|\/+$/g, '');
@@ -172,89 +182,77 @@ export class OnchainChatStorage {
   }
 
   private async putObject(objectKey: string, payload: string): Promise<void> {
-    const endpoint = new URL(this.options.endpoint);
-    const basePath = endpoint.pathname === '/' ? '' : endpoint.pathname.replace(/\/+$/, '');
-    const encodedKey = this.encodePath(objectKey);
-
-    // For Autonomys Auto Drive: use simple path-style with bucket in path if provided
-    const encodedBucket = this.options.bucket ? this.encodePath(this.options.bucket) : '';
-    const objectPath = encodedBucket 
-      ? `/${encodedBucket}/${encodedKey}`
-      : `/${encodedKey}`;
-    const fullPath = `${basePath}${objectPath}`;
-    const requestUrl = `${endpoint.protocol}//${endpoint.host}${fullPath}`;
+    const payloadBuffer = Buffer.from(payload, 'utf8');
+    const contentType = 'application/octet-stream';
+    const { client, bucket } = this.getS3Client();
 
     console.log(
-      `[OnchainChatStorage] Uploading chat history to ${requestUrl} (bucket=${this.options.bucket || '(none)'}, key=${objectKey})`,
+      `[OnchainChatStorage] Uploading chat history (bucket=${bucket}, key=${objectKey})`,
     );
 
-    // Standard AWS S3 Signature V4 authentication (Auto Drive expects SigV4 even with empty secret)
-    const amzDate = this.toAmzDate(new Date());
-    const dateStamp = amzDate.slice(0, 8);
-    const payloadHash = this.sha256Hex(payload);
-    const host = endpoint.host;
+    try {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: objectKey,
+          Body: payloadBuffer,
+          ContentType: contentType,
+          ContentLength: payloadBuffer.length,
+        }),
+      );
+    } catch (error: unknown) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode ?? 0;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new AutonomysUploadError(`Autonomys upload failed: ${message}`.trim(), status);
+    }
+  }
 
-    const canonicalHeaders = [
-      'content-type:application/json',
-      `host:${host}`,
-      `x-amz-content-sha256:${payloadHash}`,
-      `x-amz-date:${amzDate}`,
-    ].join('\n') + '\n';
+  private getS3Client(): { client: S3Client; bucket: string } {
+    if (this.s3Client && this.s3Bucket) {
+      return { client: this.s3Client, bucket: this.s3Bucket };
+    }
 
-    const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
-    const canonicalRequest = [
-      'PUT',
-      fullPath,
-      '',
-      canonicalHeaders,
-      signedHeaders,
-      payloadHash,
-    ].join('\n');
+    let bucket = this.options.bucket;
+    let endpoint = this.options.endpoint;
 
-    const credentialScope = `${dateStamp}/${this.options.region}/s3/aws4_request`;
-    const stringToSign = [
-      'AWS4-HMAC-SHA256',
-      amzDate,
-      credentialScope,
-      this.sha256Hex(canonicalRequest),
-    ].join('\n');
+    if (!bucket && endpoint) {
+      bucket = endpoint;
+      endpoint = '';
+    }
 
-    const signingKey = this.getSignatureKey(
-      this.options.secretAccessKey,
-      dateStamp,
-      this.options.region,
-      's3',
-    );
-    const signature = crypto
-      .createHmac('sha256', signingKey)
-      .update(stringToSign, 'utf8')
-      .digest('hex');
-    const authorization = `AWS4-HMAC-SHA256 Credential=${this.options.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    if (!bucket) {
+      throw new Error('Autonomys S3 bucket/endpoint is missing.');
+    }
 
-    const response = await fetch(requestUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Host: host,
-        'x-amz-content-sha256': payloadHash,
-        'x-amz-date': amzDate,
-        Authorization: authorization,
+    const bucketIsUrl = /^https?:\/\//i.test(bucket);
+
+    const client = new S3Client({
+      region: this.options.region,
+      credentials: {
+        accessKeyId: this.options.accessKeyId,
+        secretAccessKey: this.options.secretAccessKey,
       },
-      body: payload,
+      ...(bucketIsUrl ? { bucketEndpoint: true } : {}),
+      ...(bucketIsUrl ? {} : endpoint ? { endpoint, forcePathStyle: this.options.forcePathStyle } : {}),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      throw new AutonomysUploadError(
-        `Autonomys upload failed: ${response.status} ${response.statusText} ${errorText}`.trim(),
-        response.status,
-      );
-    }
+    this.s3Client = client;
+    this.s3Bucket = bucket;
+
+    return { client, bucket };
   }
 
   private shouldRetry(error: unknown): boolean {
     if (error instanceof AutonomysUploadError) {
+      if (!error.status) {
+        return true;
+      }
       return error.status >= 500 || error.status === 429;
+    }
+
+    const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+    if (status) {
+      return status >= 500 || status === 429;
     }
 
     return true;
@@ -262,39 +260,6 @@ export class OnchainChatStorage {
 
   private sleep(durationMs: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, durationMs));
-  }
-
-  private toAmzDate(date: Date): string {
-    return date.toISOString().replace(/[:-]|\.\d{3}/g, '');
-  }
-
-  private sha256Hex(value: string): string {
-    return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
-  }
-
-  private hmacSha256(key: Buffer | string, value: string): Buffer {
-    return crypto.createHmac('sha256', key).update(value, 'utf8').digest();
-  }
-
-  private getSignatureKey(secretKey: string, dateStamp: string, region: string, service: string): Buffer {
-    const kDate = this.hmacSha256(`AWS4${secretKey}`, dateStamp);
-    const kRegion = this.hmacSha256(kDate, region);
-    const kService = this.hmacSha256(kRegion, service);
-    return this.hmacSha256(kService, 'aws4_request');
-  }
-
-  private encodePath(rawPath: string): string {
-    return rawPath
-      .split('/')
-      .filter((segment) => segment.length > 0)
-      .map((segment) => this.encodePathSegment(segment))
-      .join('/');
-  }
-
-  private encodePathSegment(segment: string): string {
-    return encodeURIComponent(segment).replace(/[!'()*]/g, (char) =>
-      `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-    );
   }
 }
 
