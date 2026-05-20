@@ -23,6 +23,8 @@ interface OnchainChatStorageOptions {
   region: string;
   keyPrefix: string;
   forcePathStyle: boolean;
+  retryCount: number;
+  retryBaseDelayMs: number;
 }
 
 type Logger = (...args: any[]) => void;
@@ -47,14 +49,26 @@ export class OnchainChatStorage {
     const keyPrefix = (process.env.AUTONOMYS_CHAT_HISTORY_PREFIX || 'chat-history')
       .trim()
       .replace(/^\/+|\/+$/g, '');
-    const forcePathStyle = (process.env.AUTONOMYS_S3_FORCE_PATH_STYLE || 'true').toLowerCase() !== 'false';
+    const forcePathStyleEnv = (process.env.AUTONOMYS_S3_FORCE_PATH_STYLE || 'true').toLowerCase() !== 'false';
+    const retryCount = Math.max(
+      parseInt(process.env.AUTONOMYS_S3_RETRY_COUNT || '3', 10) || 3,
+      0,
+    );
+    const retryBaseDelayMs = Math.max(
+      parseInt(process.env.AUTONOMYS_S3_RETRY_BASE_DELAY_MS || '750', 10) || 750,
+      100,
+    );
     const enabledFlag = (process.env.AUTONOMYS_CHAT_HISTORY_ENABLED || 'false').toLowerCase() === 'true';
 
-    const hasRequiredConfig = Boolean(endpoint && bucket && accessKeyId && secretAccessKey);
+    const hasRequiredConfig = Boolean(endpoint && accessKeyId);
     const enabled = enabledFlag && hasRequiredConfig;
 
     if (enabledFlag && !hasRequiredConfig) {
       logger('[OnchainChatStorage] AUTONOMYS_CHAT_HISTORY_ENABLED=true but required S3 config is missing. Storage disabled.');
+    }
+
+    if (enabledFlag && endpoint && accessKeyId && !secretAccessKey) {
+      logger('[OnchainChatStorage] AUTONOMYS_S3_SECRET_ACCESS_KEY is empty. Proceeding with empty secret (Auto Drive-style auth).');
     }
 
     return new OnchainChatStorage({
@@ -65,7 +79,9 @@ export class OnchainChatStorage {
       secretAccessKey,
       region,
       keyPrefix: keyPrefix || 'chat-history',
-      forcePathStyle,
+      forcePathStyle: forcePathStyleEnv || !bucket,
+      retryCount,
+      retryBaseDelayMs,
     });
   }
 
@@ -85,7 +101,7 @@ export class OnchainChatStorage {
       ...record,
     });
 
-    await this.putObject(objectKey, payload);
+    await this.putObjectWithRetry(objectKey, payload);
     return objectKey;
   }
 
@@ -100,17 +116,50 @@ export class OnchainChatStorage {
     return [this.options.keyPrefix, year, month, day, fileName].filter(Boolean).join('/');
   }
 
+  private async putObjectWithRetry(objectKey: string, payload: string): Promise<void> {
+    const maxAttempts = Math.max(this.options.retryCount, 1);
+    let attempt = 0;
+
+    while (attempt < maxAttempts) {
+      try {
+        if (attempt > 0) {
+          console.log(
+            `[OnchainChatStorage] Retry attempt ${attempt + 1}/${maxAttempts} for ${objectKey}`,
+          );
+        }
+        await this.putObject(objectKey, payload);
+        return;
+      } catch (error: unknown) {
+        attempt += 1;
+        if (attempt >= maxAttempts || !this.shouldRetry(error)) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          console.warn(
+            `[OnchainChatStorage] Upload failed after ${attempt}/${maxAttempts} attempts for ${objectKey}: ${message}`,
+          );
+          throw error;
+        }
+
+        const delay = this.options.retryBaseDelayMs * Math.pow(2, attempt - 1);
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.warn(
+          `[OnchainChatStorage] Upload attempt ${attempt}/${maxAttempts} failed for ${objectKey}: ${message}. Retrying in ${delay}ms.`,
+        );
+        await this.sleep(delay);
+      }
+    }
+  }
+
   private async putObject(objectKey: string, payload: string): Promise<void> {
     const endpoint = new URL(this.options.endpoint);
     const basePath = endpoint.pathname === '/' ? '' : endpoint.pathname.replace(/\/+$/, '');
     const encodedBucket = this.encodePath(this.options.bucket);
     const encodedKey = this.encodePath(objectKey);
 
-    const objectPath = this.options.forcePathStyle
-      ? `/${encodedBucket}/${encodedKey}`
+    const objectPath = this.options.forcePathStyle || !encodedBucket
+      ? `/${[encodedBucket, encodedKey].filter(Boolean).join('/')}`
       : `/${encodedKey}`;
     const canonicalUri = `${basePath}${objectPath}` || '/';
-    const host = this.options.forcePathStyle
+    const host = this.options.forcePathStyle || !encodedBucket
       ? endpoint.host
       : `${this.options.bucket}.${endpoint.host}`;
     const requestUrl = `${endpoint.protocol}//${host}${canonicalUri}`;
@@ -118,6 +167,10 @@ export class OnchainChatStorage {
     const amzDate = this.toAmzDate(new Date());
     const dateStamp = amzDate.slice(0, 8);
     const payloadHash = this.sha256Hex(payload);
+
+    console.log(
+      `[OnchainChatStorage] Uploading chat history to ${requestUrl} (bucket=${this.options.bucket}, key=${objectKey})`,
+    );
 
     const canonicalHeaders = [
       'content-type:application/json',
@@ -170,8 +223,23 @@ export class OnchainChatStorage {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
-      throw new Error(`Autonomys upload failed: ${response.status} ${response.statusText} ${errorText}`.trim());
+      throw new AutonomysUploadError(
+        `Autonomys upload failed: ${response.status} ${response.statusText} ${errorText}`.trim(),
+        response.status,
+      );
     }
+  }
+
+  private shouldRetry(error: unknown): boolean {
+    if (error instanceof AutonomysUploadError) {
+      return error.status >= 500 || error.status === 429;
+    }
+
+    return true;
+  }
+
+  private sleep(durationMs: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, durationMs));
   }
 
   private toAmzDate(date: Date): string {
@@ -205,5 +273,15 @@ export class OnchainChatStorage {
     return encodeURIComponent(segment).replace(/[!'()*]/g, (char) =>
       `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
     );
+  }
+}
+
+class AutonomysUploadError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'AutonomysUploadError';
+    this.status = status;
   }
 }
