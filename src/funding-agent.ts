@@ -313,15 +313,10 @@ function queueChatHistory(record: ChatHistoryRecord): void {
     return;
   }
 
-  // TEMPORARILY DISABLED: on-chain chat history upload from the agent side.
-  // Re-enable by uncommenting the upload block below.
-  void record;
-  /*
   void chatHistoryStorage.store(record).catch((error: unknown) => {
     const normalizedError = serializeError(error);
     log('⚠️ Failed to persist chat history on-chain:', normalizedError.message);
   });
-  */
 }
 
 async function buildAgentHeaders(method: string, path: string, body: string): Promise<Record<string, string>> {
