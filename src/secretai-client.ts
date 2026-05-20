@@ -1,5 +1,6 @@
+import { ethers } from 'ethers';
+import crypto from 'crypto';
 import fetch from 'node-fetch';
-import { ApiKeyStorageManager } from './api-key-storage.js';
 
 interface SecretAiChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -21,34 +22,41 @@ interface SecretAiChatResponse {
 
 /**
  * SecretAI Client
- * Handles communication with SecretAI API using stored API keys
+ * Handles communication with SecretAI API using wallet-signed agent headers
  */
 export class SecretAiClient {
-  private apiKeyStorage: ApiKeyStorageManager;
+  private wallet: ethers.HDNodeWallet | ethers.Wallet;
   private baseUrl: string;
-  private defaultApiKeyName: string | null = null;
 
-  constructor(apiKeyStorage: ApiKeyStorageManager, baseUrl: string = 'https://secretai-rytn.scrtlabs.com:21434') {
-    this.apiKeyStorage = apiKeyStorage;
+  constructor(
+    wallet: ethers.HDNodeWallet | ethers.Wallet,
+    baseUrl: string = 'https://ovh1.scrtlabs.com:21434'
+  ) {
+    this.wallet = wallet;
     this.baseUrl = baseUrl;
   }
 
   /**
-   * Get the default API key (first available key)
+   * Generate SHA256 hash
    */
-  private getDefaultApiKey(): string | null {
-    if (this.defaultApiKeyName && this.apiKeyStorage.hasKey(this.defaultApiKeyName)) {
-      return this.apiKeyStorage.getKey(this.defaultApiKeyName) || null;
-    }
+  private sha256Hex(input: string): string {
+    return crypto.createHash('sha256').update(input).digest('hex');
+  }
 
-    // Find first available key
-    const keyNames = this.apiKeyStorage.getKeyNames();
-    if (keyNames.length === 0) {
-      return null;
-    }
+  /**
+   * Build authentication headers for agent requests
+   */
+  private async buildAgentHeaders(method: string, path: string, body: string): Promise<Record<string, string>> {
+    const timestamp = Date.now().toString();
+    const payload = `${method}${path}${body}${timestamp}`;
+    const requestHash = this.sha256Hex(payload);
+    const signature = await this.wallet.signMessage(ethers.getBytes(`0x${requestHash}`));
 
-    this.defaultApiKeyName = keyNames[0];
-    return this.apiKeyStorage.getKey(this.defaultApiKeyName) || null;
+    return {
+      'x-agent-address': this.wallet.address,
+      'x-agent-signature': signature,
+      'x-agent-timestamp': timestamp,
+    };
   }
 
   /**
@@ -56,20 +64,17 @@ export class SecretAiClient {
    */
   async fetchModels(): Promise<string[]> {
     try {
-      const apiKey = this.getDefaultApiKey();
-      if (!apiKey) {
-        throw new Error('No API key available. Please ensure API keys are fetched and stored.');
-      }
-
       console.log('[SecretAiClient] Fetching models from:', this.baseUrl);
-      console.log('[SecretAiClient] API key name:', this.defaultApiKeyName);
-      console.log('[SecretAiClient] API key length:', apiKey.length);
-      console.log('[SecretAiClient] API key format check:', apiKey.startsWith('sk-') ? 'Valid (sk- prefix)' : 'Invalid format');
+      console.log('[SecretAiClient] Using wallet address:', this.wallet.address);
 
-      const response = await fetch(`${this.baseUrl}/api/tags`, {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
+      const method = 'GET';
+      const path = '/api/tags';
+      const body = '';
+      const headers = await this.buildAgentHeaders(method, path, body);
+
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
       });
 
       console.log('[SecretAiClient] Models response status:', response.status, response.statusText);
@@ -99,23 +104,23 @@ export class SecretAiClient {
    */
   async chat(options: SecretAiChatOptions): Promise<SecretAiChatResponse | any> {
     try {
-      const apiKey = this.getDefaultApiKey();
-      if (!apiKey) {
-        throw new Error('No API key available. Please ensure API keys are fetched and stored.');
-      }
+      const method = 'POST';
+      const path = '/api/chat';
+      const body = JSON.stringify({
+        model: options.model,
+        messages: options.messages,
+        stream: options.stream || false,
+        think: options.think || false,
+      });
+      const headers = await this.buildAgentHeaders(method, path, body);
 
-      const response = await fetch(`${this.baseUrl}/api/chat`, {
-        method: 'POST',
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          ...headers,
         },
-        body: JSON.stringify({
-          model: options.model,
-          messages: options.messages,
-          stream: options.stream || false,
-          think: options.think || false,
-        }),
+        body,
       });
 
       if (!response.ok) {
@@ -152,20 +157,16 @@ export class SecretAiClient {
   }
 
   /**
-   * Check if API key is available
+   * Check if wallet is available
    */
-  hasApiKey(): boolean {
-    return this.getDefaultApiKey() !== null;
+  hasWallet(): boolean {
+    return Boolean(this.wallet?.address);
   }
 
   /**
-   * Get current API key name
+   * Get current wallet address
    */
-  getCurrentApiKeyName(): string | null {
-    if (this.defaultApiKeyName) {
-      return this.defaultApiKeyName;
-    }
-    const keyNames = this.apiKeyStorage.getKeyNames();
-    return keyNames.length > 0 ? keyNames[0] : null;
+  getWalletAddress(): string | null {
+    return this.wallet?.address || null;
   }
 }

@@ -5,6 +5,7 @@ import ChatCard from './components/ChatCard'
 import StatsCard from './components/StatsCard'
 import AttestationPanel from './components/AttestationPanel'
 import Toast from './components/Toast'
+import UsageHistoryCard from './components/UsageHistoryCard'
 import './App.css'
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -110,6 +111,10 @@ function App() {
             showToast={showToastMessage}
           />
           <StatsCard stats={stats} />
+        </div>
+
+        <div className="usage-grid">
+          <UsageHistoryCard apiBase={API_BASE} />
         </div>
       </div>
 

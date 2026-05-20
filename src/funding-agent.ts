@@ -49,6 +49,7 @@ interface Config {
   topUpAmountUsd: number;
   checkIntervalMs: number;
   baseUrl: string;
+  secretAiBaseUrl: string;
   chainRpcUrl: string;
   vmId: string | null;
   attestHost: string;
@@ -217,6 +218,7 @@ const config: Config = {
   checkIntervalMs: parseInt(process.env.FUNDING_AGENT_CHECK_INTERVAL_MS || '60000'),
   // Remove trailing slash from baseUrl to prevent double slashes
   baseUrl: (process.env.FUNDING_AGENT_BASE_URL || 'https://preview-aidev.scrtlabs.com/').replace(/\/$/, ''),
+  secretAiBaseUrl: (process.env.FUNDING_AGENT_SECRETAI_BASE_URL || 'https://ovh1.scrtlabs.com:21434').replace(/\/$/, ''),
   chainRpcUrl: process.env.FUNDING_AGENT_CHAIN_RPC_URL || 'https://mainnet.base.org',
   vmId: process.env.VM_ID || process.env.FUNDING_AGENT_VM_ID || null,
   attestHost: process.env.ATTEST_HOST || 'localhost',
@@ -667,15 +669,41 @@ app.get('/api/secretai/models', async (_req: Request, res: Response): Promise<vo
       return;
     }
 
-    if (!secretAiClient.hasApiKey()) {
-      res.status(503).json({ error: 'No API key available. Please wait for keys to be fetched.' });
-      return;
-    }
-
     const models = await secretAiClient.fetchModels();
     res.json({ models });
   } catch (error: any) {
     console.error('[API] Error fetching models:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Agent usage history (proxied to devportal)
+app.get('/api/agent/usage-history', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const method = 'GET';
+    const query = new URLSearchParams();
+    Object.entries(req.query || {}).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach((entry) => {
+          if (entry !== undefined) query.append(key, String(entry));
+        });
+      } else if (value !== undefined) {
+        query.append(key, String(value));
+      }
+    });
+
+    const queryString = query.toString();
+    const path = `/api/agent/usage-history${queryString ? `?${queryString}` : ''}`;
+    const headers = await buildAgentHeaders(method, path, '');
+
+    const response = await fetch(`${config.baseUrl}${path}`, { method, headers });
+    const responseBody = await response.text();
+
+    res.status(response.status);
+    res.setHeader('Content-Type', response.headers.get('content-type') || 'application/json');
+    res.send(responseBody);
+  } catch (error: any) {
+    console.error('[API] Error fetching agent usage history:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -723,15 +751,6 @@ app.post('/api/secretai/chat', async (req: Request, res: Response): Promise<void
         error: { message: 'SecretAI client not initialized' },
       });
       res.status(500).json({ error: 'SecretAI client not initialized' });
-      return;
-    }
-
-    if (!secretAiClient.hasApiKey()) {
-      persistSecretAiHistory({
-        status: 'rejected',
-        error: { message: 'No API key available. Please wait for keys to be fetched.' },
-      });
-      res.status(503).json({ error: 'No API key available. Please wait for keys to be fetched.' });
       return;
     }
 
@@ -851,8 +870,8 @@ app.get('/api/stats', (_req: Request, res: Response): void => {
       threshold: config.minBalanceUsd,
     },
     secretAi: {
-      available: secretAiClient?.hasApiKey() || false,
-      apiKeyName: secretAiClient?.getCurrentApiKeyName() || null,
+      available: secretAiClient?.hasWallet() || false,
+      walletAddress: secretAiClient?.getWalletAddress() || null,
     },
     version: {
       version: buildInfo.version,
@@ -1037,31 +1056,29 @@ async function startAgent(): Promise<void> {
       console.log('');
     }
     
-    // Initialize API key storage
-    console.log('🔑 Initializing API key storage...');
+    // Initialize SecretAI client (wallet-signed auth)
+    secretAiClient = new SecretAiClient(wallet, config.secretAiBaseUrl);
+    console.log('✅ SecretAI client initialized (wallet-signed)');
+
+    // Initialize API key storage (legacy compatibility)
+    console.log('🔑 Initializing API key storage (legacy)...');
     await apiKeyStorage.initialize();
-    
+
     // Initialize API key fetcher
-    apiKeyFetcher = new ApiKeyFetcher(wallet, config.baseUrl, apiKeyStorage);
-    
-    // Fetch API keys if storage is empty
     try {
+      apiKeyFetcher = new ApiKeyFetcher(wallet, config.baseUrl, apiKeyStorage);
       await apiKeyFetcher.fetchAndStoreIfEmpty();
-      
+
       if (apiKeyStorage.isEmpty()) {
-        console.log('⚠️  No API keys found. Agent may have limited functionality.');
+        console.log('⚠️  No API keys found (legacy).');
       } else {
         console.log(`✅ API key storage ready with ${apiKeyStorage.getCount()} key(s)`);
         const keyNames = apiKeyStorage.getKeyNames();
         console.log('   Available keys:', keyNames.join(', '));
-        
-        // Initialize SecretAI client
-        secretAiClient = new SecretAiClient(apiKeyStorage);
-        console.log('✅ SecretAI client initialized');
       }
     } catch (error: any) {
       console.log('⚠️  Failed to fetch API keys:', error.message);
-      console.log('   Agent will continue without API keys.');
+      console.log('   Continuing without API keys (wallet-signed SecretAI enabled).');
     }
     console.log('');
     
