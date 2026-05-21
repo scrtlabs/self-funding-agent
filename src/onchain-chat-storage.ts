@@ -103,6 +103,23 @@ export class OnchainChatStorage {
       logger('[OnchainChatStorage] AUTONOMYS_S3_SECRET_ACCESS_KEY is empty. Using SigV4 with empty secret (Auto Drive auth).');
     }
 
+    if (enabledFlag) {
+      const maskedAccessKey = accessKeyId
+        ? `${accessKeyId.slice(0, 4)}…${accessKeyId.slice(-4)}`
+        : '(empty)';
+      logger('[OnchainChatStorage] Config snapshot', {
+        enabledFlag,
+        endpoint: endpoint || '(empty)',
+        bucket: bucket || '(empty)',
+        accessKeyId: maskedAccessKey,
+        accessKeyLength: accessKeyId.length,
+        secretKeyLength: secretAccessKey.length,
+        region,
+        keyPrefix: keyPrefix || 'chat-history',
+        forcePathStyle: forcePathStyleEnv || !bucket,
+      });
+    }
+
     return new OnchainChatStorage({
       enabled,
       endpoint,
