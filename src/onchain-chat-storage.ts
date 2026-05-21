@@ -92,7 +92,7 @@ export class OnchainChatStorage {
       }
     }
 
-    const hasRequiredConfig = Boolean(endpoint && accessKeyId);
+    const hasRequiredConfig = Boolean(accessKeyId && (endpoint || bucket));
     const enabled = enabledFlag && hasRequiredConfig;
 
     if (enabledFlag && !hasRequiredConfig) {
