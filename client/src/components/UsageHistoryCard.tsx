@@ -35,7 +35,7 @@ export default function UsageHistoryCard({ apiBase }: UsageHistoryCardProps) {
     try {
       setIsLoading(true);
       setErrorMessage(null);
-      const response = await fetch(`${apiBase}/api/agent/usage-history?page=1&pageSize=5&service=SECRET_AI`);
+      const response = await fetch(`${apiBase}/api/agent/usage-history?page=1&pageSize=5&service=ALL`);
       if (!response.ok) {
         throw new Error(`Usage history request failed (${response.status})`);
       }
