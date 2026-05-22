@@ -336,6 +336,43 @@ async function buildAgentHeaders(method: string, path: string, body: string): Pr
   };
 }
 
+async function registerAgentWallet(): Promise<void> {
+  if (!config.vmId) {
+    log('⚠️ Skipping wallet registration - VM_ID not configured');
+    return;
+  }
+
+  const method = 'POST';
+  const path = '/api/agent/set-agent-wallet';
+  const url = `${config.baseUrl}${path}`;
+  const payload = { vm_id: config.vmId };
+  const body = stableStringify(payload);
+  const headers = await buildAgentHeaders(method, path, body);
+
+  log(`Registering agent wallet: ${method} ${url}`);
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    log('⚠️ Failed to register agent wallet:', {
+      status: response.status,
+      message: (errorData as any).message || response.statusText,
+    });
+    return;
+  }
+
+  const responseData = await response.json().catch(() => ({}));
+  log('✅ Agent wallet registered for VM', responseData);
+}
+
 // VM Balance Management
 class VMBalanceManager {
   private isRunning: boolean = false;
@@ -377,7 +414,7 @@ class VMBalanceManager {
       const path = `/api/agent/balance?vm_id=${config.vmId}`;
       const url = `${config.baseUrl}${path}`;
       
-      log(`Checking VM balance: ${method} ${url}`);
+      log(`c: ${method} ${url}`);
       
       // No authentication required for balance check
       const response = await fetch(url, {
@@ -1051,6 +1088,8 @@ async function startAgent(): Promise<void> {
       console.log('⚠️  Please set VM_ID environment variable.');
       console.log('');
     }
+
+    await registerAgentWallet();
     
     // Initialize SecretAI client (wallet-signed auth)
     secretAiClient = new SecretAiClient(wallet, config.secretAiBaseUrl);
