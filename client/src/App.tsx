@@ -6,6 +6,7 @@ import StatsCard from './components/StatsCard'
 import AttestationPanel from './components/AttestationPanel'
 import Toast from './components/Toast'
 import UsageHistoryCard from './components/UsageHistoryCard'
+import ChatHistoryPage from './components/ChatHistoryPage'
 import './App.css'
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -37,6 +38,7 @@ function App() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [showToast, setShowToast] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const showToastMessage = (message: string) => {
     setToastMessage(message);
@@ -88,10 +90,15 @@ function App() {
 
   return (
     <>
-      <div className="container">
-        <Header 
-          onBadgeClick={() => setPanelOpen(!panelOpen)}
-        />
+      {showHistory ? (
+        <ChatHistoryPage onBack={() => setShowHistory(false)} />
+      ) : (
+        <>
+          <div className="container">
+            <Header 
+              onBadgeClick={() => setPanelOpen(!panelOpen)}
+              onHistoryClick={() => setShowHistory(true)}
+            />
         
         <BalanceHero
           walletBalance={stats.currentBalance}
@@ -120,9 +127,11 @@ function App() {
 
       <Toast message={toastMessage} show={showToast} />
       <AttestationPanel 
-        isOpen={panelOpen}
-        onClose={() => setPanelOpen(false)}
-      />
+          isOpen={panelOpen}
+          onClose={() => setPanelOpen(false)}
+        />
+        </>
+      )}
     </>
   )
 }

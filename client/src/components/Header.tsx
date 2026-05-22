@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 
 interface HeaderProps {
   onBadgeClick: () => void;
+  onHistoryClick: () => void;
 }
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -10,7 +11,7 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
 
 const GITHUB_REPO = 'https://github.com/scrtlabs/self-funding-agent';
 
-function Header({ onBadgeClick }: HeaderProps) {
+function Header({ onBadgeClick, onHistoryClick }: HeaderProps) {
   const [badgeState, setBadgeState] = useState<'success' | 'loading' | 'error'>('loading');
   const [badgeText, setBadgeText] = useState('Verifying...');
   const [version, setVersion] = useState<string>('');
@@ -71,6 +72,9 @@ function Header({ onBadgeClick }: HeaderProps) {
   return (
     <div className="header">
       <div className="header-left">
+        <button className="history-button" onClick={onHistoryClick} title="View Chat History">
+          History
+        </button>
         <div>
           <h1>Funding Agent Dashboard</h1>
           <p>

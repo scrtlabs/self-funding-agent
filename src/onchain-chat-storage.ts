@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { Readable } from 'stream';
 
 export interface ChatHistoryRecord {
   requestId: string;
@@ -277,6 +278,97 @@ export class OnchainChatStorage {
 
   private sleep(durationMs: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, durationMs));
+  }
+
+  async listChatHistory(options?: {
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ records: ChatHistoryRecord[]; total: number }> {
+    if (!this.options.enabled) {
+      return { records: [], total: 0 };
+    }
+
+    const { client, bucket } = this.getS3Client();
+    const prefix = this.options.keyPrefix;
+
+    const allRecords: ChatHistoryRecord[] = [];
+    let continuationToken: string | undefined;
+
+    do {
+      const listCommand = new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix + '/',
+        ContinuationToken: continuationToken,
+        MaxKeys: 1000,
+      });
+
+      const response = await client.send(listCommand);
+      const objects = response.Contents || [];
+
+      for (const obj of objects) {
+        if (!obj.Key || !obj.Key.endsWith('.json')) continue;
+
+        try {
+          const getCommand = new GetObjectCommand({
+            Bucket: bucket,
+            Key: obj.Key,
+          });
+          const objResponse = await client.send(getCommand);
+
+          if (objResponse.Body) {
+            const bodyString = await this.streamToString(objResponse.Body as Readable);
+            const parsed = JSON.parse(bodyString);
+
+            const record: ChatHistoryRecord = {
+              requestId: parsed.requestId,
+              endpoint: parsed.endpoint,
+              timestamp: parsed.timestamp,
+              request: parsed.request,
+              response: parsed.response,
+              error: parsed.error,
+              metadata: parsed.metadata,
+            };
+
+            allRecords.push(record);
+          }
+        } catch (err) {
+          console.warn(`[OnchainChatStorage] Failed to fetch ${obj.Key}:`, err);
+        }
+      }
+
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+
+    let filtered = allRecords;
+
+    if (options?.startDate) {
+      const start = new Date(options.startDate).getTime();
+      filtered = filtered.filter((r) => new Date(r.timestamp).getTime() >= start);
+    }
+
+    if (options?.endDate) {
+      const end = new Date(options.endDate).getTime();
+      filtered = filtered.filter((r) => new Date(r.timestamp).getTime() <= end);
+    }
+
+    filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    const total = filtered.length;
+    const offset = options?.offset || 0;
+    const limit = options?.limit || 50;
+    const paginated = filtered.slice(offset, offset + limit);
+
+    return { records: paginated, total };
+  }
+
+  private async streamToString(stream: Readable): Promise<string> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString('utf8');
   }
 }
 

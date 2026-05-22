@@ -613,6 +613,33 @@ app.use(express.json());
 // Serve static files from client/dist
 app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
 
+// Chat history endpoint
+app.get('/api/chat-history', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+    const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+    const limit = Math.min(parseInt(req.query.limit as string || '50', 10) || 50, 200);
+    const offset = Math.max(parseInt(req.query.offset as string || '0', 10) || 0, 0);
+
+    const result = await chatHistoryStorage.listChatHistory({
+      startDate,
+      endDate,
+      limit,
+      offset,
+    });
+
+    res.json({
+      records: result.records,
+      total: result.total,
+      limit,
+      offset,
+    });
+  } catch (error: any) {
+    console.error('[API] Error fetching chat history:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Main chat endpoint
 app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
   stats.totalRequests++;
