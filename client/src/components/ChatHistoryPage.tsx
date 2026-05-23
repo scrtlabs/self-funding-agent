@@ -128,6 +128,52 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
     return getPreview(firstMessage);
   };
 
+  const buildAutonomysUrl = (record: ChatHistoryRecord) => {
+    if (!record.sessionId || record.messageIndex === undefined) return null;
+    
+    const eventDate = new Date(record.timestamp);
+    const year = String(eventDate.getUTCFullYear());
+    const month = String(eventDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(eventDate.getUTCDate()).padStart(2, '0');
+    const messageIndex = String(record.messageIndex).padStart(4, '0');
+    const safeSessionId = record.sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${safeSessionId}-${messageIndex}-${eventDate.getTime()}.json`;
+    const keyPrefix = 'chat-history';
+    
+    // Build the full path
+    const fullPath = `${keyPrefix}/${year}/${month}/${day}/${fileName}`;
+    
+    // Autonomys Auto Drive URL format (this may need adjustment based on actual URL structure)
+    return `https://auto-drive.autonomys.xyz/file/${fullPath}`;
+  };
+
+  const extractMessageContent = (record: ChatHistoryRecord) => {
+    const request = record.request as any;
+    const response = record.response as any;
+    
+    // Extract user message
+    let userMessage = '';
+    if (request?.messages && Array.isArray(request.messages)) {
+      const lastUserMsg = [...request.messages].reverse().find((m: any) => m.role === 'user');
+      userMessage = lastUserMsg?.content || '';
+    }
+    
+    // Extract assistant response
+    let assistantMessage = '';
+    let thinking = '';
+    
+    if (response?.message?.content) {
+      assistantMessage = response.message.content;
+      thinking = response.message.thinking || '';
+    } else if (response?.response) {
+      assistantMessage = response.response;
+    } else if (response?.choices?.[0]?.message?.content) {
+      assistantMessage = response.choices[0].message.content;
+    }
+    
+    return { userMessage, assistantMessage, thinking };
+  };
+
   const hasNext = offset + limit < total;
   const hasPrev = offset > 0;
 
@@ -233,31 +279,92 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
               <button className="close-button" onClick={() => setSelectedSession(null)}>×</button>
             </div>
             <div className="modal-body">
-              <p><strong>Session ID:</strong> {selectedSession.sessionId}</p>
-              <p><strong>Messages:</strong> {selectedSession.messageCount}</p>
-              <p><strong>Started:</strong> {formatDate(selectedSession.firstTimestamp)}</p>
-              <p><strong>Last Activity:</strong> {formatDate(selectedSession.lastTimestamp)}</p>
+              <div style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid #444' }}>
+                <p><strong>Session ID:</strong> {selectedSession.sessionId}</p>
+                <p><strong>Messages:</strong> {selectedSession.messageCount}</p>
+                <p><strong>Started:</strong> {formatDate(selectedSession.firstTimestamp)}</p>
+                <p><strong>Last Activity:</strong> {formatDate(selectedSession.lastTimestamp)}</p>
+              </div>
               
-              <h4 style={{ marginTop: '20px' }}>Conversation:</h4>
-              {selectedSession.messages.map((record, idx) => (
-                <div key={record.requestId} style={{ marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-                  <p><strong>Message #{record.messageIndex ?? idx + 1}</strong> - {formatDate(record.timestamp)}</p>
-                  <details>
-                    <summary>Request</summary>
-                    <pre>{JSON.stringify(record.request, null, 2)}</pre>
-                  </details>
-                  <details>
-                    <summary>Response</summary>
-                    <pre>{JSON.stringify(record.response, null, 2)}</pre>
-                  </details>
-                  {record.error && (
-                    <details>
-                      <summary>Error</summary>
-                      <pre>{JSON.stringify(record.error, null, 2)}</pre>
-                    </details>
-                  )}
-                </div>
-              ))}
+              <div className="chat-container" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                {selectedSession.messages.map((record, idx) => {
+                  const { userMessage, assistantMessage, thinking } = extractMessageContent(record);
+                  const autonomysUrl = buildAutonomysUrl(record);
+                  
+                  return (
+                    <div key={record.requestId} style={{ marginBottom: '30px' }}>
+                      {/* Message metadata */}
+                      <div style={{ fontSize: '0.85em', color: '#888', marginBottom: '10px' }}>
+                        <span>Message #{record.messageIndex ?? idx + 1}</span>
+                        <span style={{ margin: '0 10px' }}>•</span>
+                        <span>{formatDate(record.timestamp)}</span>
+                        {autonomysUrl && (
+                          <>
+                            <span style={{ margin: '0 10px' }}>•</span>
+                            <a 
+                              href={autonomysUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              style={{ color: '#4a9eff', textDecoration: 'none' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              View on Autonomys
+                            </a>
+                          </>
+                        )}
+                      </div>
+                      
+                      {/* User message */}
+                      {userMessage && (
+                        <div className="message user" style={{ 
+                          marginBottom: '10px',
+                          padding: '12px 16px',
+                          backgroundColor: '#2a2a2a',
+                          borderRadius: '8px',
+                          marginLeft: '20%',
+                        }}>
+                          <div style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '5px' }}>You</div>
+                          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{userMessage}</div>
+                        </div>
+                      )}
+                      
+                      {/* Assistant message */}
+                      {assistantMessage && (
+                        <div className="message assistant" style={{ 
+                          padding: '12px 16px',
+                          backgroundColor: '#1a3a1a',
+                          borderRadius: '8px',
+                          marginRight: '20%',
+                        }}>
+                          <div style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '5px' }}>Assistant</div>
+                          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{assistantMessage}</div>
+                          {thinking && (
+                            <details style={{ marginTop: '10px', fontSize: '0.9em', color: '#999' }}>
+                              <summary style={{ cursor: 'pointer' }}>Thinking process</summary>
+                              <div style={{ marginTop: '5px', padding: '8px', backgroundColor: '#0a0a0a', borderRadius: '4px' }}>
+                                {thinking}
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Error display */}
+                      {record.error && (
+                        <div style={{ 
+                          marginTop: '10px',
+                          padding: '12px 16px',
+                          backgroundColor: '#3a1a1a',
+                          borderRadius: '8px',
+                          color: '#ff6b6b'
+                        }}>
+                          <strong>Error:</strong> {record.error.message}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
