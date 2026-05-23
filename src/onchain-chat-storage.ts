@@ -400,52 +400,45 @@ export class OnchainChatStorage {
       
       console.log(`[OnchainChatStorage] Total files fetched: ${allFiles.length}`);
       
-      // Filter and parse chat history files
+      // Parse file metadata to reconstruct records
       const records: ChatHistoryRecord[] = [];
       
       for (const file of allFiles) {
-        // Check if this is a chat history file (matches our naming pattern)
         const fileName = file.name || '';
-        const isHistoryFile = fileName.match(/^.+-\d{4}-\d+\.json$/);
         
-        if (!isHistoryFile) {
+        // Parse filename: sessionId-messageIndex-timestamp.json
+        const match = fileName.match(/^(.+)-(\d{4})-(\d+)\.json$/);
+        
+        if (!match) {
           continue; // Skip non-history files
         }
         
-        try {
-          // Download and parse the file
-          const stream = await this.autoDriveApi.downloadFile(file.headCid);
-          let fileContent = Buffer.alloc(0);
-          
-          for await (const chunk of stream) {
-            fileContent = Buffer.concat([fileContent, chunk]);
-          }
-          
-          const content = JSON.parse(fileContent.toString('utf8'));
-          
-          // Reconstruct ChatHistoryRecord from the lightweight payload
-          const record: ChatHistoryRecord = {
-            requestId: file.headCid, // Use CID as requestId if not available
-            endpoint: '/api/secretai/chat',
-            timestamp: content.timestamp,
-            sessionId: content.sessionId,
-            messageIndex: content.messageIndex,
-            cid: file.headCid,
-            request: {
-              model: content.model,
-              messages: content.messages,
-            },
-            response: content.response,
-            error: content.error,
-            metadata: {
-              sessionId: content.sessionId,
-            },
-          };
-          
-          records.push(record);
-        } catch (error) {
-          console.warn(`[OnchainChatStorage] Failed to parse file ${fileName}:`, error);
-        }
+        const [, sessionId, messageIndexStr, timestampStr] = match;
+        const messageIndex = parseInt(messageIndexStr, 10);
+        const timestamp = new Date(parseInt(timestampStr, 10)).toISOString();
+        
+        // Create a minimal record from metadata
+        // We can't download the full content due to webcrypto issues,
+        // but we have enough info to display in the history list
+        const record: ChatHistoryRecord = {
+          requestId: file.headCid,
+          endpoint: '/api/secretai/chat',
+          timestamp,
+          sessionId,
+          messageIndex,
+          cid: file.headCid,
+          request: {
+            // Placeholder - actual content is in Autonomys
+            messages: [],
+          },
+          metadata: {
+            sessionId,
+            fileName,
+            size: file.size,
+          },
+        };
+        
+        records.push(record);
       }
       
       console.log(`[OnchainChatStorage] Parsed ${records.length} chat history records`);
