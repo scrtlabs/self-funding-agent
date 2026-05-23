@@ -16,6 +16,7 @@ export interface ChatHistoryRecord {
   metadata?: Record<string, unknown>;
   sessionId?: string;
   messageIndex?: number;
+  cid?: string;
 }
 
 interface ChatHistoryIndex {
@@ -187,7 +188,12 @@ export class OnchainChatStorage {
     const lightweightPayload = this.createLightweightPayload(record);
     const payload = JSON.stringify(lightweightPayload, null, 2);
 
-    await this.putObjectWithRetry(objectKey, payload);
+    const cid = await this.putObjectWithRetry(objectKey, payload);
+    
+    // Store CID in the record
+    if (cid) {
+      record.cid = cid;
+    }
     
     // Add to local index
     this.index.records.push(record);
@@ -261,7 +267,7 @@ export class OnchainChatStorage {
     return [this.options.keyPrefix, year, month, day, fileName].filter(Boolean).join('/');
   }
 
-  private async putObjectWithRetry(objectKey: string, payload: string): Promise<void> {
+  private async putObjectWithRetry(objectKey: string, payload: string): Promise<string | null> {
     const maxAttempts = Math.max(this.options.retryCount, 1);
     let attempt = 0;
 
@@ -272,8 +278,8 @@ export class OnchainChatStorage {
             `[OnchainChatStorage] Retry attempt ${attempt + 1}/${maxAttempts} for ${objectKey}`,
           );
         }
-        await this.putObject(objectKey, payload);
-        return;
+        const cid = await this.putObject(objectKey, payload);
+        return cid;
       } catch (error: unknown) {
         attempt += 1;
         if (attempt >= maxAttempts || !this.shouldRetry(error)) {
@@ -292,9 +298,11 @@ export class OnchainChatStorage {
         await this.sleep(delay);
       }
     }
+    
+    return null;
   }
 
-  private async putObject(objectKey: string, payload: string): Promise<void> {
+  private async putObject(objectKey: string, payload: string): Promise<string | null> {
     const payloadBuffer = Buffer.from(payload, 'utf8');
     const contentType = 'application/octet-stream';
     const { client, bucket } = this.getS3Client();
@@ -304,7 +312,7 @@ export class OnchainChatStorage {
     );
 
     try {
-      await client.send(
+      const response = await client.send(
         new PutObjectCommand({
           Bucket: bucket,
           Key: objectKey,
@@ -313,6 +321,15 @@ export class OnchainChatStorage {
           ContentLength: payloadBuffer.length,
         }),
       );
+      
+      // Extract CID from response headers if available
+      const cid = (response as any).ETag?.replace(/"/g, '') || null;
+      
+      if (cid) {
+        console.log(`[OnchainChatStorage] Upload successful, CID: ${cid}`);
+      }
+      
+      return cid;
     } catch (error: unknown) {
       const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode ?? 0;
       const message = error instanceof Error ? error.message : String(error);

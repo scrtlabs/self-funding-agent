@@ -10,6 +10,7 @@ interface ChatHistoryRecord {
   metadata?: Record<string, unknown>;
   sessionId?: string;
   messageIndex?: number;
+  cid?: string;
 }
 
 interface ChatSession {
@@ -129,22 +130,12 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
   };
 
   const buildAutonomysUrl = (record: ChatHistoryRecord) => {
-    if (!record.sessionId || record.messageIndex === undefined) return null;
+    // Use CID if available
+    if (record.cid) {
+      return `https://explorer.ai3.storage/mainnet/drive/metadata/${record.cid}`;
+    }
     
-    const eventDate = new Date(record.timestamp);
-    const year = String(eventDate.getUTCFullYear());
-    const month = String(eventDate.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(eventDate.getUTCDate()).padStart(2, '0');
-    const messageIndex = String(record.messageIndex).padStart(4, '0');
-    const safeSessionId = record.sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const fileName = `${safeSessionId}-${messageIndex}-${eventDate.getTime()}.json`;
-    const keyPrefix = 'chat-history';
-    
-    // Build the full path
-    const fullPath = `${keyPrefix}/${year}/${month}/${day}/${fileName}`;
-    
-    // Autonomys Auto Drive URL format (this may need adjustment based on actual URL structure)
-    return `https://auto-drive.autonomys.xyz/file/${fullPath}`;
+    return null;
   };
 
   const extractMessageContent = (record: ChatHistoryRecord) => {
@@ -279,33 +270,38 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
               <button className="close-button" onClick={() => setSelectedSession(null)}>×</button>
             </div>
             <div className="modal-body">
-              <div style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid #444' }}>
+              <div style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
                 <p><strong>Session ID:</strong> {selectedSession.sessionId}</p>
                 <p><strong>Messages:</strong> {selectedSession.messageCount}</p>
                 <p><strong>Started:</strong> {formatDate(selectedSession.firstTimestamp)}</p>
                 <p><strong>Last Activity:</strong> {formatDate(selectedSession.lastTimestamp)}</p>
               </div>
               
-              <div className="chat-container" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+              <div className="chat-container" style={{ height: '500px', marginBottom: '0' }}>
                 {selectedSession.messages.map((record, idx) => {
                   const { userMessage, assistantMessage, thinking } = extractMessageContent(record);
                   const autonomysUrl = buildAutonomysUrl(record);
                   
                   return (
-                    <div key={record.requestId} style={{ marginBottom: '30px' }}>
+                    <div key={record.requestId}>
                       {/* Message metadata */}
-                      <div style={{ fontSize: '0.85em', color: '#888', marginBottom: '10px' }}>
+                      <div style={{ 
+                        fontSize: '11px', 
+                        color: 'rgba(255, 255, 255, 0.5)', 
+                        marginBottom: '8px',
+                        textAlign: 'center'
+                      }}>
                         <span>Message #{record.messageIndex ?? idx + 1}</span>
-                        <span style={{ margin: '0 10px' }}>•</span>
+                        <span style={{ margin: '0 8px' }}>•</span>
                         <span>{formatDate(record.timestamp)}</span>
                         {autonomysUrl && (
                           <>
-                            <span style={{ margin: '0 10px' }}>•</span>
+                            <span style={{ margin: '0 8px' }}>•</span>
                             <a 
                               href={autonomysUrl} 
                               target="_blank" 
                               rel="noopener noreferrer"
-                              style={{ color: '#4a9eff', textDecoration: 'none' }}
+                              style={{ color: '#a5b4fc', textDecoration: 'none' }}
                               onClick={(e) => e.stopPropagation()}
                             >
                               View on Autonomys
@@ -316,48 +312,32 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
                       
                       {/* User message */}
                       {userMessage && (
-                        <div className="message user" style={{ 
-                          marginBottom: '10px',
-                          padding: '12px 16px',
-                          backgroundColor: '#2a2a2a',
-                          borderRadius: '8px',
-                          marginLeft: '20%',
-                        }}>
-                          <div style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '5px' }}>You</div>
-                          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{userMessage}</div>
+                        <div className="message user">
+                          <div className="message-content">
+                            {userMessage}
+                          </div>
                         </div>
                       )}
                       
                       {/* Assistant message */}
                       {assistantMessage && (
-                        <div className="message assistant" style={{ 
-                          padding: '12px 16px',
-                          backgroundColor: '#1a3a1a',
-                          borderRadius: '8px',
-                          marginRight: '20%',
-                        }}>
-                          <div style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '5px' }}>Assistant</div>
-                          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{assistantMessage}</div>
+                        <div className="message assistant">
+                          <div className="message-header">Funding Agent</div>
+                          <div className="message-content">
+                            {assistantMessage}
+                          </div>
                           {thinking && (
-                            <details style={{ marginTop: '10px', fontSize: '0.9em', color: '#999' }}>
-                              <summary style={{ cursor: 'pointer' }}>Thinking process</summary>
-                              <div style={{ marginTop: '5px', padding: '8px', backgroundColor: '#0a0a0a', borderRadius: '4px' }}>
-                                {thinking}
-                              </div>
-                            </details>
+                            <div className="message-thinking">
+                              <div className="thinking-label">Thinking:</div>
+                              <div className="thinking-content">{thinking}</div>
+                            </div>
                           )}
                         </div>
                       )}
                       
                       {/* Error display */}
                       {record.error && (
-                        <div style={{ 
-                          marginTop: '10px',
-                          padding: '12px 16px',
-                          backgroundColor: '#3a1a1a',
-                          borderRadius: '8px',
-                          color: '#ff6b6b'
-                        }}>
+                        <div className="error-message" style={{ marginTop: '8px', marginBottom: '16px' }}>
                           <strong>Error:</strong> {record.error.message}
                         </div>
                       )}
