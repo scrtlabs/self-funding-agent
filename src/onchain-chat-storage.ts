@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import fs from 'fs';
-import path from 'path';
+import { createAutoDriveApi } from '@autonomys/auto-drive';
+import { NetworkId } from '@autonomys/auto-utils';
 
 export interface ChatHistoryRecord {
   requestId: string;
@@ -17,11 +17,6 @@ export interface ChatHistoryRecord {
   sessionId?: string;
   messageIndex?: number;
   cid?: string;
-}
-
-interface ChatHistoryIndex {
-  records: ChatHistoryRecord[];
-  lastUpdated: string;
 }
 
 interface OnchainChatStorageOptions {
@@ -47,13 +42,23 @@ export class OnchainChatStorage {
   private readonly options: OnchainChatStorageOptions;
   private s3Client: S3Client | null = null;
   private s3Bucket: string | null = null;
-  private indexPath: string;
-  private index: ChatHistoryIndex;
+  private autoDriveApi: any = null;
 
   constructor(options: OnchainChatStorageOptions) {
     this.options = options;
-    this.indexPath = process.env.CHAT_HISTORY_INDEX_PATH || path.join(process.cwd(), 'data', 'chat-history-index.json');
-    this.index = this.loadIndex();
+    
+    // Initialize Auto Drive API if enabled
+    if (options.enabled && options.accessKeyId) {
+      try {
+        this.autoDriveApi = createAutoDriveApi({
+          apiKey: options.accessKeyId,
+          network: NetworkId.MAINNET,
+        });
+        console.log('[OnchainChatStorage] Auto Drive API initialized');
+      } catch (error) {
+        console.warn('[OnchainChatStorage] Failed to initialize Auto Drive API:', error);
+      }
+    }
   }
 
   static fromEnv(logger: Logger = console.log): OnchainChatStorage {
@@ -152,31 +157,6 @@ export class OnchainChatStorage {
     return this.options.enabled;
   }
 
-  private loadIndex(): ChatHistoryIndex {
-    try {
-      if (fs.existsSync(this.indexPath)) {
-        const data = fs.readFileSync(this.indexPath, 'utf8');
-        return JSON.parse(data);
-      }
-    } catch (err) {
-      console.warn('[OnchainChatStorage] Failed to load index:', err);
-    }
-    return { records: [], lastUpdated: new Date().toISOString() };
-  }
-
-  private saveIndex(): void {
-    try {
-      const dir = path.dirname(this.indexPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      this.index.lastUpdated = new Date().toISOString();
-      fs.writeFileSync(this.indexPath, JSON.stringify(this.index, null, 2), 'utf8');
-    } catch (err) {
-      console.warn('[OnchainChatStorage] Failed to save index:', err);
-    }
-  }
-
   async store(record: ChatHistoryRecord): Promise<string | null> {
     if (!this.options.enabled) {
       return null;
@@ -194,10 +174,6 @@ export class OnchainChatStorage {
     if (cid) {
       record.cid = cid;
     }
-    
-    // Add to local index
-    this.index.records.push(record);
-    this.saveIndex();
     
     return objectKey;
   }
@@ -398,32 +374,108 @@ export class OnchainChatStorage {
     limit?: number;
     offset?: number;
   }): Promise<{ records: ChatHistoryRecord[]; total: number }> {
-    if (!this.options.enabled) {
+    if (!this.options.enabled || !this.autoDriveApi) {
       return { records: [], total: 0 };
     }
 
-    // Use local index (Autonomys SDK has download issues with webcrypto dependencies)
-    // Files are uploaded to Autonomys but we maintain a local index for fast retrieval
-    let filtered = [...this.index.records];
+    try {
+      console.log('[OnchainChatStorage] Fetching chat history from Autonomys...');
+      
+      // Fetch all files from Autonomys
+      const allFiles: any[] = [];
+      let page = 0;
+      const pageSize = 100;
+      
+      while (true) {
+        const result = await this.autoDriveApi.getMyFiles(page, pageSize);
+        allFiles.push(...result.rows);
+        
+        console.log(`[OnchainChatStorage] Fetched page ${page}: ${result.rows.length} files`);
+        
+        if (result.rows.length < pageSize) {
+          break; // No more files
+        }
+        page++;
+      }
+      
+      console.log(`[OnchainChatStorage] Total files fetched: ${allFiles.length}`);
+      
+      // Filter and parse chat history files
+      const records: ChatHistoryRecord[] = [];
+      
+      for (const file of allFiles) {
+        // Check if this is a chat history file (matches our naming pattern)
+        const fileName = file.name || '';
+        const isHistoryFile = fileName.match(/^.+-\d{4}-\d+\.json$/);
+        
+        if (!isHistoryFile) {
+          continue; // Skip non-history files
+        }
+        
+        try {
+          // Download and parse the file
+          const stream = await this.autoDriveApi.downloadFile(file.headCid);
+          let fileContent = Buffer.alloc(0);
+          
+          for await (const chunk of stream) {
+            fileContent = Buffer.concat([fileContent, chunk]);
+          }
+          
+          const content = JSON.parse(fileContent.toString('utf8'));
+          
+          // Reconstruct ChatHistoryRecord from the lightweight payload
+          const record: ChatHistoryRecord = {
+            requestId: file.headCid, // Use CID as requestId if not available
+            endpoint: '/api/secretai/chat',
+            timestamp: content.timestamp,
+            sessionId: content.sessionId,
+            messageIndex: content.messageIndex,
+            cid: file.headCid,
+            request: {
+              model: content.model,
+              messages: content.messages,
+            },
+            response: content.response,
+            error: content.error,
+            metadata: {
+              sessionId: content.sessionId,
+            },
+          };
+          
+          records.push(record);
+        } catch (error) {
+          console.warn(`[OnchainChatStorage] Failed to parse file ${fileName}:`, error);
+        }
+      }
+      
+      console.log(`[OnchainChatStorage] Parsed ${records.length} chat history records`);
+      
+      // Apply filters
+      let filtered = records;
+      
+      if (options?.startDate) {
+        const start = new Date(options.startDate).getTime();
+        filtered = filtered.filter((r) => new Date(r.timestamp).getTime() >= start);
+      }
 
-    if (options?.startDate) {
-      const start = new Date(options.startDate).getTime();
-      filtered = filtered.filter((r) => new Date(r.timestamp).getTime() >= start);
+      if (options?.endDate) {
+        const end = new Date(options.endDate).getTime();
+        filtered = filtered.filter((r) => new Date(r.timestamp).getTime() <= end);
+      }
+
+      // Sort by timestamp (most recent first)
+      filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      const total = filtered.length;
+      const offset = options?.offset || 0;
+      const limit = options?.limit || 50;
+      const paginated = filtered.slice(offset, offset + limit);
+
+      return { records: paginated, total };
+    } catch (error) {
+      console.error('[OnchainChatStorage] Error fetching chat history from Autonomys:', error);
+      return { records: [], total: 0 };
     }
-
-    if (options?.endDate) {
-      const end = new Date(options.endDate).getTime();
-      filtered = filtered.filter((r) => new Date(r.timestamp).getTime() <= end);
-    }
-
-    filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    const total = filtered.length;
-    const offset = options?.offset || 0;
-    const limit = options?.limit || 50;
-    const paginated = filtered.slice(offset, offset + limit);
-
-    return { records: paginated, total };
   }
 }
 
