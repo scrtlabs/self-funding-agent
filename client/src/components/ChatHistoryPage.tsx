@@ -8,6 +8,8 @@ interface ChatHistoryRecord {
   response?: unknown;
   error?: { message: string };
   metadata?: Record<string, unknown>;
+  sessionId?: string;
+  messageIndex?: number;
 }
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -59,11 +61,23 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
       return msg.slice(0, 100) + (msg.length > 100 ? '...' : '');
     }
     if (record.endpoint === '/api/secretai/chat') {
-      const msgs = (record.request as { messages?: Array<{ content: string }> })?.messages || [];
-      const lastUser = [...msgs].reverse().find(m => m.content);
+      const msgs = (record.request as { messages?: Array<{ content: string; role: string }> })?.messages || [];
+      const lastUser = [...msgs].reverse().find(m => m.role === 'user');
       return lastUser?.content?.slice(0, 100) || 'Chat';
     }
     return record.endpoint;
+  };
+
+  const getSessionInfo = (record: ChatHistoryRecord) => {
+    const sessionId = record.sessionId || record.metadata?.sessionId;
+    const messageIndex = record.messageIndex;
+    
+    if (sessionId && messageIndex !== undefined) {
+      return `Session: ${String(sessionId).slice(0, 8)}... | Msg #${messageIndex}`;
+    } else if (sessionId) {
+      return `Session: ${String(sessionId).slice(0, 8)}...`;
+    }
+    return null;
   };
 
   const hasNext = offset + limit < total;
@@ -97,8 +111,11 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
                   <span className="timestamp">{formatDate(record.timestamp)}</span>
                 </div>
                 <div className="history-preview">{getPreview(record)}</div>
+                {getSessionInfo(record) && (
+                  <div className="history-meta">{getSessionInfo(record)}</div>
+                )}
                 {record.metadata?.ip && (
-                  <div className="history-meta">IP: {String(record.metadata.ip).slice(0, 20)}...</div>
+                  <div className="history-meta">IP: {String(record.metadata.ip).slice(0, 20)}</div>
                 )}
               </div>
             ))}
@@ -131,6 +148,12 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
             </div>
             <div className="modal-body">
               <p><strong>Request ID:</strong> {selectedRecord.requestId}</p>
+              {selectedRecord.sessionId && (
+                <p><strong>Session ID:</strong> {selectedRecord.sessionId}</p>
+              )}
+              {selectedRecord.messageIndex !== undefined && (
+                <p><strong>Message Index:</strong> {selectedRecord.messageIndex}</p>
+              )}
               <p><strong>Endpoint:</strong> {selectedRecord.endpoint}</p>
               <p><strong>Timestamp:</strong> {formatDate(selectedRecord.timestamp)}</p>
               <details>

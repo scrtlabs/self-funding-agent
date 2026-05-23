@@ -773,7 +773,7 @@ app.post('/api/secretai/chat', async (req: Request, res: Response): Promise<void
   stats.totalRequests++;
   const requestId = crypto.randomUUID();
   const requestTimestamp = new Date().toISOString();
-  const { model, messages, stream, think } = req.body || {};
+  const { model, messages, stream, think, sessionId, messageIndex } = req.body || {};
   const streamEnabled = stream === true;
   const thinkEnabled = think === true;
 
@@ -787,11 +787,14 @@ app.post('/api/secretai/chat', async (req: Request, res: Response): Promise<void
       requestId,
       endpoint: '/api/secretai/chat',
       timestamp: requestTimestamp,
+      sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+      messageIndex: typeof messageIndex === 'number' ? messageIndex : undefined,
       request: {
         model: typeof model === 'string' ? model : null,
         messages: Array.isArray(messages) ? messages : (messages ?? null),
         stream: streamEnabled,
         think: thinkEnabled,
+        sessionId: typeof sessionId === 'string' ? sessionId : null,
       },
       response: payload.response,
       error: payload.error,
@@ -799,6 +802,7 @@ app.post('/api/secretai/chat', async (req: Request, res: Response): Promise<void
         status: payload.status,
         ip: getClientIp(req),
         userAgent: req.get('user-agent') || null,
+        sessionId: typeof sessionId === 'string' ? sessionId : null,
         ...(payload.extraMetadata || {}),
       },
     });

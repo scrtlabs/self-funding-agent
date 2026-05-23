@@ -1,6 +1,7 @@
 import crypto from 'crypto';
-import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { Readable } from 'stream';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import fs from 'fs';
+import path from 'path';
 
 export interface ChatHistoryRecord {
   requestId: string;
@@ -13,6 +14,13 @@ export interface ChatHistoryRecord {
     stack?: string;
   };
   metadata?: Record<string, unknown>;
+  sessionId?: string;
+  messageIndex?: number;
+}
+
+interface ChatHistoryIndex {
+  records: ChatHistoryRecord[];
+  lastUpdated: string;
 }
 
 interface OnchainChatStorageOptions {
@@ -38,9 +46,13 @@ export class OnchainChatStorage {
   private readonly options: OnchainChatStorageOptions;
   private s3Client: S3Client | null = null;
   private s3Bucket: string | null = null;
+  private indexPath: string;
+  private index: ChatHistoryIndex;
 
   constructor(options: OnchainChatStorageOptions) {
     this.options = options;
+    this.indexPath = process.env.CHAT_HISTORY_INDEX_PATH || path.join(process.cwd(), 'data', 'chat-history-index.json');
+    this.index = this.loadIndex();
   }
 
   static fromEnv(logger: Logger = console.log): OnchainChatStorage {
@@ -139,20 +151,89 @@ export class OnchainChatStorage {
     return this.options.enabled;
   }
 
+  private loadIndex(): ChatHistoryIndex {
+    try {
+      if (fs.existsSync(this.indexPath)) {
+        const data = fs.readFileSync(this.indexPath, 'utf8');
+        return JSON.parse(data);
+      }
+    } catch (err) {
+      console.warn('[OnchainChatStorage] Failed to load index:', err);
+    }
+    return { records: [], lastUpdated: new Date().toISOString() };
+  }
+
+  private saveIndex(): void {
+    try {
+      const dir = path.dirname(this.indexPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      this.index.lastUpdated = new Date().toISOString();
+      fs.writeFileSync(this.indexPath, JSON.stringify(this.index, null, 2), 'utf8');
+    } catch (err) {
+      console.warn('[OnchainChatStorage] Failed to save index:', err);
+    }
+  }
+
   async store(record: ChatHistoryRecord): Promise<string | null> {
     if (!this.options.enabled) {
       return null;
     }
 
     const objectKey = this.buildObjectKey(record);
-    const payload = JSON.stringify({
-      version: '1.0',
-      storedAt: new Date().toISOString(),
-      ...record,
-    });
+    
+    // Create lightweight payload - remove system prompts and unnecessary data
+    const lightweightPayload = this.createLightweightPayload(record);
+    const payload = JSON.stringify(lightweightPayload, null, 2);
 
     await this.putObjectWithRetry(objectKey, payload);
+    
+    // Add to local index
+    this.index.records.push(record);
+    this.saveIndex();
+    
     return objectKey;
+  }
+
+  private createLightweightPayload(record: ChatHistoryRecord): any {
+    const request = record.request as any;
+    const response = record.response as any;
+    
+    // Extract only user messages and assistant responses, filter out system prompts
+    let cleanMessages = [];
+    if (request?.messages && Array.isArray(request.messages)) {
+      cleanMessages = request.messages
+        .filter((msg: any) => msg.role !== 'system')
+        .map((msg: any) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+    }
+    
+    // Extract assistant response content
+    let assistantResponse = null;
+    if (response?.message?.content) {
+      assistantResponse = {
+        content: response.message.content,
+        thinking: response.message.thinking || undefined,
+      };
+    } else if (response?.response) {
+      assistantResponse = { content: response.response };
+    } else if (response?.choices?.[0]?.message?.content) {
+      assistantResponse = { content: response.choices[0].message.content };
+    }
+    
+    return {
+      version: '2.0',
+      sessionId: record.sessionId || record.metadata?.sessionId || null,
+      messageIndex: record.messageIndex || null,
+      timestamp: record.timestamp,
+      messages: cleanMessages,
+      response: assistantResponse,
+      model: request?.model || null,
+      error: record.error || null,
+    };
   }
 
   private buildObjectKey(record: ChatHistoryRecord): string {
@@ -160,8 +241,22 @@ export class OnchainChatStorage {
     const year = String(eventDate.getUTCFullYear());
     const month = String(eventDate.getUTCMonth() + 1).padStart(2, '0');
     const day = String(eventDate.getUTCDate()).padStart(2, '0');
-    const safeRequestId = (record.requestId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const fileName = `${eventDate.getTime()}-${safeRequestId}.json`;
+    
+    // Extract session ID from record or metadata
+    const sessionId = record.sessionId || (record.metadata?.sessionId as string) || 'no-session';
+    const safeSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    
+    // Use message index if available, otherwise use timestamp
+    const messageIndex = record.messageIndex !== undefined ? String(record.messageIndex).padStart(4, '0') : null;
+    
+    // Build filename: sessionId-messageIndex-timestamp.json or sessionId-timestamp-requestId.json
+    let fileName: string;
+    if (messageIndex !== null) {
+      fileName = `${safeSessionId}-${messageIndex}-${eventDate.getTime()}.json`;
+    } else {
+      const safeRequestId = (record.requestId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, '_');
+      fileName = `${safeSessionId}-${eventDate.getTime()}-${safeRequestId}.json`;
+    }
 
     return [this.options.keyPrefix, year, month, day, fileName].filter(Boolean).join('/');
   }
@@ -290,58 +385,9 @@ export class OnchainChatStorage {
       return { records: [], total: 0 };
     }
 
-    const { client, bucket } = this.getS3Client();
-    const prefix = this.options.keyPrefix;
-
-    const allRecords: ChatHistoryRecord[] = [];
-    let continuationToken: string | undefined;
-
-    do {
-      const listCommand = new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: prefix + '/',
-        ContinuationToken: continuationToken,
-        MaxKeys: 1000,
-      });
-
-      const response = await client.send(listCommand);
-      const objects = response.Contents || [];
-
-      for (const obj of objects) {
-        if (!obj.Key || !obj.Key.endsWith('.json')) continue;
-
-        try {
-          const getCommand = new GetObjectCommand({
-            Bucket: bucket,
-            Key: obj.Key,
-          });
-          const objResponse = await client.send(getCommand);
-
-          if (objResponse.Body) {
-            const bodyString = await this.streamToString(objResponse.Body as Readable);
-            const parsed = JSON.parse(bodyString);
-
-            const record: ChatHistoryRecord = {
-              requestId: parsed.requestId,
-              endpoint: parsed.endpoint,
-              timestamp: parsed.timestamp,
-              request: parsed.request,
-              response: parsed.response,
-              error: parsed.error,
-              metadata: parsed.metadata,
-            };
-
-            allRecords.push(record);
-          }
-        } catch (err) {
-          console.warn(`[OnchainChatStorage] Failed to fetch ${obj.Key}:`, err);
-        }
-      }
-
-      continuationToken = response.NextContinuationToken;
-    } while (continuationToken);
-
-    let filtered = allRecords;
+    // Use local index (Autonomys SDK has download issues with webcrypto dependencies)
+    // Files are uploaded to Autonomys but we maintain a local index for fast retrieval
+    let filtered = [...this.index.records];
 
     if (options?.startDate) {
       const start = new Date(options.startDate).getTime();
@@ -361,14 +407,6 @@ export class OnchainChatStorage {
     const paginated = filtered.slice(offset, offset + limit);
 
     return { records: paginated, total };
-  }
-
-  private async streamToString(stream: Readable): Promise<string> {
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks).toString('utf8');
   }
 }
 

@@ -40,7 +40,24 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const [sessionId, setSessionId] = useState<string>('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Initialize session ID from URL or generate new one
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let currentSessionId = params.get('sessionId');
+    
+    if (!currentSessionId) {
+      // Generate new session ID
+      currentSessionId = crypto.randomUUID();
+      // Update URL without page reload
+      params.set('sessionId', currentSessionId);
+      window.history.replaceState(null, '', `?${params.toString()}`);
+    }
+    
+    setSessionId(currentSessionId);
+  }, []);
 
   // Fetch available models
   useEffect(() => {
@@ -124,6 +141,9 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
         ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
       ];
 
+      // Calculate message index (count of user messages in this session)
+      const messageIndex = conversationMessages.filter(m => m.role === 'user').length;
+
       const response = await fetch(`${API_BASE}/api/secretai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,6 +152,8 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
           messages: apiMessages,
           stream: false,
           think: thinkingEnabled,
+          sessionId: sessionId,
+          messageIndex: messageIndex,
         }),
       });
 
