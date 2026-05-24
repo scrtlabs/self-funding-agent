@@ -479,14 +479,13 @@ export class OnchainChatStorage {
     try {
       console.log(`[OnchainChatStorage] Downloading message content for CID: ${cid}`);
       
-      // Use Autonomys HTTP gateway to download file content
-      // This bypasses the SDK's encryption/decryption layer
-      const gatewayUrl = `https://gateway.ai3.storage/${cid}`;
+      // Use Autonomys gateway to download file content
+      const downloadUrl = `https://gateway.autonomys.xyz/file/${cid}`;
       
-      const response = await fetch(gatewayUrl);
+      const response = await fetch(downloadUrl);
       
       if (!response.ok) {
-        throw new Error(`Failed to download from gateway: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to download from Autonomys gateway: ${response.status} ${response.statusText}`);
       }
       
       const content = await response.json();
