@@ -30,17 +30,20 @@ export default function UsageHistoryCard({ apiBase }: UsageHistoryCardProps) {
   const [usageHistory, setUsageHistory] = useState<UsageHistoryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 5;
 
-  const loadUsageHistory = async () => {
+  const loadUsageHistory = async (page: number) => {
     try {
       setIsLoading(true);
       setErrorMessage(null);
-      const response = await fetch(`${apiBase}/api/agent/usage-history?page=1&pageSize=5&service=ALL`);
+      const response = await fetch(`${apiBase}/api/agent/usage-history?page=${page}&pageSize=${pageSize}&service=ALL`);
       if (!response.ok) {
         throw new Error(`Usage history request failed (${response.status})`);
       }
       const data = await response.json() as UsageHistoryResponse;
       setUsageHistory(data);
+      setCurrentPage(page);
     } catch (error: any) {
       setErrorMessage(error.message || 'Failed to load usage history.');
     } finally {
@@ -49,7 +52,7 @@ export default function UsageHistoryCard({ apiBase }: UsageHistoryCardProps) {
   };
 
   useEffect(() => {
-    loadUsageHistory();
+    loadUsageHistory(1);
   }, []);
 
   return (
@@ -59,11 +62,11 @@ export default function UsageHistoryCard({ apiBase }: UsageHistoryCardProps) {
       </div>
 
       <p className="usage-card-subtitle">
-        Last 5 days of SecretAI usage charges from the devportal.
+        SecretAI usage charges from the devportal.
       </p>
 
       <div className="usage-card-actions">
-        <button onClick={loadUsageHistory} disabled={isLoading}>
+        <button onClick={() => loadUsageHistory(currentPage)} disabled={isLoading}>
           {isLoading ? 'Refreshing...' : 'Refresh Usage'}
         </button>
       </div>
@@ -107,6 +110,24 @@ export default function UsageHistoryCard({ apiBase }: UsageHistoryCardProps) {
           </div>
         </div>
       ))}
+
+      {usageHistory && usageHistory.totalPages > 1 && (
+        <div className="pagination">
+          <button
+            disabled={currentPage <= 1}
+            onClick={() => loadUsageHistory(currentPage - 1)}
+          >
+            Previous
+          </button>
+          <span>Page {currentPage} of {usageHistory.totalPages}</span>
+          <button
+            disabled={currentPage >= usageHistory.totalPages}
+            onClick={() => loadUsageHistory(currentPage + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }
