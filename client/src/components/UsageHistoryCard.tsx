@@ -84,7 +84,7 @@ export default function UsageHistoryCard({ apiBase }: UsageHistoryCardProps) {
         <div key={group.date} className="usage-day">
           <div className="usage-day-header">
             <span>{group.date}</span>
-            <span>${group.totalAmount.toFixed(4)}</span>
+            <span>${group.totalAmount < 0.01 && group.totalAmount > 0 ? group.totalAmount.toFixed(6) : group.totalAmount.toFixed(2)}</span>
           </div>
           <div className="usage-entries">
             {group.usages.map((usage) => (
@@ -92,7 +92,10 @@ export default function UsageHistoryCard({ apiBase }: UsageHistoryCardProps) {
                 <div className="usage-entry-main">
                   <span>{usage.description || 'AI usage charge'}</span>
                   <span className="usage-entry-amount">
-                    ${Math.abs(Number(usage.amount || 0)).toFixed(4)}
+                    ${(() => {
+                      const amt = Math.abs(Number(usage.amount || 0));
+                      return amt < 0.01 && amt > 0 ? amt.toFixed(6) : amt.toFixed(2);
+                    })()}
                   </span>
                 </div>
                 <div className="usage-entry-meta">

@@ -228,19 +228,9 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
         </button>
         <h2>Chat History</h2>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button 
-            onClick={() => setViewMode('sessions')}
-            className={viewMode === 'sessions' ? 'active' : ''}
-          >
-            By Sessions
-          </button>
-          <button 
-            onClick={() => setViewMode('messages')}
-            className={viewMode === 'messages' ? 'active' : ''}
-          >
-            All Messages
-          </button>
-          <span className="total-count">{total} total</span>
+          <span className="total-count">
+            {viewMode === 'sessions' ? `${sessions.length} total chats` : `${total} total messages`}
+          </span>
         </div>
       </div>
 
