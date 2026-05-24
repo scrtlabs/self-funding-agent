@@ -640,6 +640,30 @@ app.get('/api/chat-history', async (req: Request, res: Response): Promise<void> 
   }
 });
 
+// Download message content by CID
+app.get('/api/chat-history/:cid', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { cid } = req.params;
+    
+    if (!cid) {
+      res.status(400).json({ error: 'CID is required' });
+      return;
+    }
+
+    const content = await chatHistoryStorage.downloadMessageContent(cid);
+    
+    if (!content) {
+      res.status(404).json({ error: 'Message content not found' });
+      return;
+    }
+
+    res.json(content);
+  } catch (error: any) {
+    console.error('[API] Error downloading message content:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Main chat endpoint
 app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
   stats.totalRequests++;

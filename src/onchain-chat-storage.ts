@@ -470,6 +470,34 @@ export class OnchainChatStorage {
       return { records: [], total: 0 };
     }
   }
+
+  async downloadMessageContent(cid: string): Promise<any | null> {
+    if (!this.options.enabled) {
+      return null;
+    }
+
+    try {
+      console.log(`[OnchainChatStorage] Downloading message content for CID: ${cid}`);
+      
+      // Use Autonomys HTTP gateway to download file content
+      // This bypasses the SDK's encryption/decryption layer
+      const gatewayUrl = `https://gateway.ai3.storage/${cid}`;
+      
+      const response = await fetch(gatewayUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to download from gateway: ${response.status} ${response.statusText}`);
+      }
+      
+      const content = await response.json();
+      console.log(`[OnchainChatStorage] Successfully downloaded content for CID: ${cid}`);
+      
+      return content;
+    } catch (error) {
+      console.error(`[OnchainChatStorage] Error downloading message content for CID ${cid}:`, error);
+      return null;
+    }
+  }
 }
 
 class AutonomysUploadError extends Error {

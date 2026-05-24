@@ -38,6 +38,7 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
   const [offset, setOffset] = useState(0);
   const [selectedSession, setSelectedSession] = useState<ChatSession | null>(null);
   const [viewMode, setViewMode] = useState<'sessions' | 'messages'>('sessions');
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const limit = 20;
 
   const fetchHistory = async (newOffset: number) => {
@@ -59,6 +60,51 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchMessageContent = async (cid: string): Promise<any> => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat-history/${cid}`);
+      if (!res.ok) {
+        throw new Error('Failed to fetch message content');
+      }
+      return await res.json();
+    } catch (err) {
+      console.error('Error fetching message content:', err);
+      return null;
+    }
+  };
+
+  const loadSessionMessages = async (session: ChatSession) => {
+    setLoadingMessages(true);
+    
+    // Fetch full content for each message in the session
+    const messagesWithContent = await Promise.all(
+      session.messages.map(async (record) => {
+        if (!record.cid) return record;
+        
+        const content = await fetchMessageContent(record.cid);
+        if (!content) return record;
+        
+        // Merge the downloaded content with the record
+        return {
+          ...record,
+          request: {
+            model: content.model,
+            messages: content.messages,
+          },
+          response: content.response,
+          error: content.error,
+        };
+      })
+    );
+    
+    setSelectedSession({
+      ...session,
+      messages: messagesWithContent,
+    });
+    
+    setLoadingMessages(false);
   };
 
   const groupRecordsBySessions = (records: ChatHistoryRecord[]) => {
@@ -204,7 +250,7 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
                 <div
                   key={session.sessionId}
                   className="history-item"
-                  onClick={() => setSelectedSession(session)}
+                  onClick={() => loadSessionMessages(session)}
                 >
                   <div className="history-item-header">
                     <span className="endpoint">Session: {session.sessionId.slice(0, 12)}...</span>
@@ -221,7 +267,7 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
                 <div
                   key={record.requestId}
                   className="history-item"
-                  onClick={() => setSelectedSession({
+                  onClick={() => loadSessionMessages({
                     sessionId: record.sessionId || 'single',
                     messages: [record],
                     firstTimestamp: record.timestamp,
@@ -277,74 +323,78 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
                 <p><strong>Last Activity:</strong> {formatDate(selectedSession.lastTimestamp)}</p>
               </div>
               
-              <div className="chat-container" style={{ height: '500px', marginBottom: '0' }}>
-                {selectedSession.messages.map((record, idx) => {
-                  const { userMessage, assistantMessage, thinking } = extractMessageContent(record);
-                  const autonomysUrl = buildAutonomysUrl(record);
-                  
-                  return (
-                    <div key={record.requestId}>
-                      {/* Message metadata */}
-                      <div style={{ 
-                        fontSize: '11px', 
-                        color: 'rgba(255, 255, 255, 0.5)', 
-                        marginBottom: '8px',
-                        textAlign: 'center'
-                      }}>
-                        <span>Message #{record.messageIndex ?? idx + 1}</span>
-                        <span style={{ margin: '0 8px' }}>•</span>
-                        <span>{formatDate(record.timestamp)}</span>
-                        {autonomysUrl && (
-                          <>
-                            <span style={{ margin: '0 8px' }}>•</span>
-                            <a 
-                              href={autonomysUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              style={{ color: '#a5b4fc', textDecoration: 'none' }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              View on Autonomys
-                            </a>
-                          </>
-                        )}
-                      </div>
-                      
-                      {/* User message */}
-                      {userMessage && (
-                        <div className="message user">
-                          <div className="message-content">
-                            {userMessage}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Assistant message */}
-                      {assistantMessage && (
-                        <div className="message assistant">
-                          <div className="message-header">Funding Agent</div>
-                          <div className="message-content">
-                            {assistantMessage}
-                          </div>
-                          {thinking && (
-                            <div className="message-thinking">
-                              <div className="thinking-label">Thinking:</div>
-                              <div className="thinking-content">{thinking}</div>
-                            </div>
+              {loadingMessages ? (
+                <div className="loading">Loading messages from Autonomys...</div>
+              ) : (
+                <div className="chat-container" style={{ height: '500px', marginBottom: '0' }}>
+                  {selectedSession.messages.map((record, idx) => {
+                    const { userMessage, assistantMessage, thinking } = extractMessageContent(record);
+                    const autonomysUrl = buildAutonomysUrl(record);
+                    
+                    return (
+                      <div key={record.requestId}>
+                        {/* Message metadata */}
+                        <div style={{ 
+                          fontSize: '11px', 
+                          color: 'rgba(255, 255, 255, 0.5)', 
+                          marginBottom: '8px',
+                          textAlign: 'center'
+                        }}>
+                          <span>Message #{record.messageIndex ?? idx + 1}</span>
+                          <span style={{ margin: '0 8px' }}>•</span>
+                          <span>{formatDate(record.timestamp)}</span>
+                          {autonomysUrl && (
+                            <>
+                              <span style={{ margin: '0 8px' }}>•</span>
+                              <a 
+                                href={autonomysUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                style={{ color: '#a5b4fc', textDecoration: 'none' }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                View on Autonomys
+                              </a>
+                            </>
                           )}
                         </div>
-                      )}
-                      
-                      {/* Error display */}
-                      {record.error && (
-                        <div className="error-message" style={{ marginTop: '8px', marginBottom: '16px' }}>
-                          <strong>Error:</strong> {record.error.message}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        
+                        {/* User message */}
+                        {userMessage && (
+                          <div className="message user">
+                            <div className="message-content">
+                              {userMessage}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Assistant message */}
+                        {assistantMessage && (
+                          <div className="message assistant">
+                            <div className="message-header">Funding Agent</div>
+                            <div className="message-content">
+                              {assistantMessage}
+                            </div>
+                            {thinking && (
+                              <div className="message-thinking">
+                                <div className="thinking-label">Thinking:</div>
+                                <div className="thinking-content">{thinking}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Error display */}
+                        {record.error && (
+                          <div className="error-message" style={{ marginTop: '8px', marginBottom: '16px' }}>
+                            <strong>Error:</strong> {record.error.message}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
