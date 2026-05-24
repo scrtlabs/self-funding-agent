@@ -80,6 +80,7 @@ function App() {
     loadStats();
 
     const statsInterval = setInterval(loadStats, 10000);
+    
     const healthInterval = setInterval(checkHealth, 5000);
 
     return () => {
