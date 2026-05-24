@@ -196,10 +196,16 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
     }
     
     // Extract assistant response
+    // The lightweight payload stores response as: { content: "...", thinking: "..." }
     let assistantMessage = '';
     let thinking = '';
     
-    if (response?.message?.content) {
+    if (response?.content) {
+      // Lightweight payload format (v2.0)
+      assistantMessage = response.content;
+      thinking = response.thinking || '';
+    } else if (response?.message?.content) {
+      // Legacy format
       assistantMessage = response.message.content;
       thinking = response.message.thinking || '';
     } else if (response?.response) {
