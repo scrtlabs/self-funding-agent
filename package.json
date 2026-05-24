@@ -30,7 +30,7 @@
     "ethers": "^6.13.0",
     "express": "^4.18.2",
     "node-fetch": "^3.3.2",
-    "secretvm-verify": "^0.9.0"
+    "secretvm-verify": "^0.9.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
