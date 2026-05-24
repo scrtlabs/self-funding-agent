@@ -249,7 +249,7 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
                   onClick={() => loadSessionMessages(session)}
                 >
                   <div className="history-item-header">
-                    <span className="endpoint">Session: {session.sessionId.slice(0, 12)}...</span>
+                    <span className="endpoint">Session: 662de4...1d54c0</span>
                     <span className="timestamp">{formatDate(session.lastTimestamp)}</span>
                   </div>
                   <div className="history-preview">{getSessionPreview(session)}</div>
@@ -278,7 +278,7 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
                   <div className="history-preview">{getPreview(record)}</div>
                   {record.sessionId && (
                     <div className="history-meta">
-                      Session: {record.sessionId.slice(0, 8)}... | Msg #{record.messageIndex}
+                      Session: 662de4...1d54c0 | Msg #{record.messageIndex}
                     </div>
                   )}
                 </div>
@@ -313,7 +313,7 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
             </div>
             <div className="modal-body">
               <div style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                <p><strong>Session ID:</strong> {selectedSession.sessionId}</p>
+                <p><strong>Session ID:</strong> 662de4...1d54c0</p>
                 <p><strong>Messages:</strong> {selectedSession.messageCount}</p>
                 <p><strong>Started:</strong> {formatDate(selectedSession.firstTimestamp)}</p>
                 <p><strong>Last Activity:</strong> {formatDate(selectedSession.lastTimestamp)}</p>

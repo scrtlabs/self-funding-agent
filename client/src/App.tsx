@@ -112,12 +112,12 @@ function App() {
         />
 
         <div className="grid">
+          <StatsCard stats={stats} />
           <ChatCard 
             isConnected={isConnected}
             onStatsUpdate={loadStats}
             showToast={showToastMessage}
           />
-          <StatsCard stats={stats} />
         </div>
 
         <div className="usage-grid">

@@ -21,6 +21,18 @@ interface SecretAiChatResponse {
 }
 
 /**
+ * Resolve the appropriate SecretAI base URL based on the model
+ */
+async function resolveSecretAiBaseUrl(model: string): Promise<string> {
+  // Use separate base URL for gpt-oss:120b model
+  const normalizedModel = model.toLowerCase().trim();
+  if (normalizedModel === 'gpt-oss:120b' || normalizedModel === 'gpt-oss' || normalizedModel === 'gptoss:120b' || normalizedModel === 'gptoss') {
+    return 'https://secretai-jedi.scrtlabs.com:21434';
+  }
+  return 'https://secretai-rytn.scrtlabs.com:21434';
+}
+
+/**
  * SecretAI Client
  * Handles communication with SecretAI API using wallet-signed agent headers
  */
@@ -105,6 +117,9 @@ export class SecretAiClient {
    */
   async chat(options: SecretAiChatOptions): Promise<SecretAiChatResponse | any> {
     try {
+      // Resolve the appropriate base URL based on the model
+      const targetBaseUrl = await resolveSecretAiBaseUrl(options.model);
+      
       const method = 'POST';
       const path = '/api/chat';
       const body = JSON.stringify({
@@ -115,7 +130,7 @@ export class SecretAiClient {
       });
       const headers = await this.buildAgentHeaders(method, path, body);
 
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await fetch(`${targetBaseUrl}${path}`, {
         method,
         headers: {
           'Content-Type': 'application/json',

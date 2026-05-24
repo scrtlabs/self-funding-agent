@@ -47,20 +47,14 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
   const [sessionId, setSessionId] = useState<string>('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Initialize session ID from URL or generate new one
+  // Initialize session ID from URL if it exists
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    let currentSessionId = params.get('sessionId');
+    const currentSessionId = params.get('sessionId');
     
-    if (!currentSessionId) {
-      // Generate new session ID
-      currentSessionId = crypto.randomUUID();
-      // Update URL without page reload
-      params.set('sessionId', currentSessionId);
-      window.history.replaceState(null, '', `?${params.toString()}`);
+    if (currentSessionId) {
+      setSessionId(currentSessionId);
     }
-    
-    setSessionId(currentSessionId);
   }, []);
 
   // Fetch available models
@@ -130,6 +124,18 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
       return;
     }
 
+    // Generate session ID on first message if it doesn't exist
+    let currentSessionId = sessionId;
+    if (!currentSessionId) {
+      currentSessionId = crypto.randomUUID();
+      setSessionId(currentSessionId);
+      
+      // Update URL without page reload
+      const params = new URLSearchParams(window.location.search);
+      params.set('sessionId', currentSessionId);
+      window.history.replaceState(null, '', `?${params.toString()}`);
+    }
+
     // Add user message
     const userMessage: Message = { role: 'user', content: message };
     const conversationMessages = [...messages, userMessage];
@@ -156,7 +162,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
           messages: apiMessages,
           stream: false,
           think: thinkingEnabled,
-          sessionId: sessionId,
+          sessionId: currentSessionId,
           messageIndex: messageIndex,
         }),
       });
