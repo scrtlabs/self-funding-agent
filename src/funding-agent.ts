@@ -50,6 +50,8 @@ interface Config {
   checkIntervalMs: number;
   baseUrl: string;
   secretAiBaseUrl: string;
+  secretAiApiKey: string;
+  secretAiAuthMethod: 'api-key' | 'wallet-signature';
   chainRpcUrl: string;
   vmId: string | null;
   attestHost: string;
@@ -219,6 +221,8 @@ const config: Config = {
   // Remove trailing slash from baseUrl to prevent double slashes
   baseUrl: (process.env.FUNDING_AGENT_BASE_URL || 'https://preview-aidev.scrtlabs.com/').replace(/\/$/, ''),
   secretAiBaseUrl: (process.env.FUNDING_AGENT_SECRETAI_BASE_URL || 'https://ovh1.scrtlabs.com:21434').replace(/\/$/, ''),
+  secretAiApiKey: process.env.FUNDING_AGENT_SECRETAI_API_KEY || '',
+  secretAiAuthMethod: (process.env.FUNDING_AGENT_SECRETAI_AUTH_METHOD || 'api-key') as 'api-key' | 'wallet-signature',
   chainRpcUrl: process.env.FUNDING_AGENT_CHAIN_RPC_URL || 'https://mainnet.base.org',
   vmId: process.env.VM_ID || process.env.FUNDING_AGENT_VM_ID || null,
   attestHost: process.env.ATTEST_HOST || 'localhost',
@@ -1146,9 +1150,27 @@ async function startAgent(): Promise<void> {
 
     await registerAgentWallet();
     
-    // Initialize SecretAI client (wallet-signed auth)
-    secretAiClient = new SecretAiClient(wallet, config.secretAiBaseUrl);
-    console.log('✅ SecretAI client initialized (wallet-signed)');
+    // Initialize SecretAI client with selected auth method
+    if (config.secretAiAuthMethod === 'api-key') {
+      if (!config.secretAiApiKey) {
+        console.log('⚠️  WARNING: API key auth selected but FUNDING_AGENT_SECRETAI_API_KEY not set!');
+        console.log('⚠️  SecretAI client will not be initialized.');
+      } else {
+        secretAiClient = new SecretAiClient({
+          apiKey: config.secretAiApiKey,
+          baseUrl: config.secretAiBaseUrl,
+          authMethod: 'api-key',
+        });
+        console.log('✅ SecretAI client initialized (API key auth)');
+      }
+    } else {
+      secretAiClient = new SecretAiClient({
+        wallet: wallet,
+        baseUrl: config.secretAiBaseUrl,
+        authMethod: 'wallet-signature',
+      });
+      console.log('✅ SecretAI client initialized (wallet-signature auth)');
+    }
 
     // Initialize API key storage (legacy compatibility)
     console.log('🔑 Initializing API key storage (legacy)...');

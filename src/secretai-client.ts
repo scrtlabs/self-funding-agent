@@ -20,6 +20,15 @@ interface SecretAiChatResponse {
   choices?: Array<{ message?: { content?: string } }>;
 }
 
+type AuthMethod = 'api-key' | 'wallet-signature';
+
+interface SecretAiClientOptions {
+  wallet?: ethers.HDNodeWallet | ethers.Wallet;
+  apiKey?: string;
+  baseUrl?: string;
+  authMethod?: AuthMethod;
+}
+
 /**
  * Resolve the appropriate SecretAI base URL based on the model
  */
@@ -34,18 +43,27 @@ async function resolveSecretAiBaseUrl(model: string): Promise<string> {
 
 /**
  * SecretAI Client
- * Handles communication with SecretAI API using wallet-signed agent headers
+ * Handles communication with SecretAI API using either API key or wallet-signed agent headers
  */
 export class SecretAiClient {
-  private wallet: ethers.HDNodeWallet | ethers.Wallet;
+  private wallet?: ethers.HDNodeWallet | ethers.Wallet;
+  private apiKey?: string;
   private baseUrl: string;
+  private authMethod: AuthMethod;
 
-  constructor(
-    wallet: ethers.HDNodeWallet | ethers.Wallet,
-    baseUrl: string = 'https://ovh1.scrtlabs.com:21434'
-  ) {
-    this.wallet = wallet;
-    this.baseUrl = baseUrl;
+  constructor(options: SecretAiClientOptions) {
+    this.wallet = options.wallet;
+    this.apiKey = options.apiKey;
+    this.baseUrl = options.baseUrl || 'https://ovh1.scrtlabs.com:21434';
+    this.authMethod = options.authMethod || 'api-key';
+
+    // Validate authentication configuration
+    if (this.authMethod === 'api-key' && !this.apiKey) {
+      throw new Error('API key is required when using api-key authentication method');
+    }
+    if (this.authMethod === 'wallet-signature' && !this.wallet) {
+      throw new Error('Wallet is required when using wallet-signature authentication method');
+    }
   }
 
   /**
@@ -59,6 +77,17 @@ export class SecretAiClient {
    * Build authentication headers for agent requests
    */
   private async buildAgentHeaders(method: string, path: string, body: string): Promise<Record<string, string>> {
+    if (this.authMethod === 'api-key') {
+      return {
+        'Authorization': `Bearer ${this.apiKey}`,
+      };
+    }
+
+    // wallet-signature method
+    if (!this.wallet) {
+      throw new Error('Wallet is not available for signature authentication');
+    }
+
     const timestamp = Date.now().toString();
     const signaturePath = path.split('?')[0];
     const payload = `${method}${signaturePath}${body}${timestamp}`;
@@ -78,7 +107,11 @@ export class SecretAiClient {
   async fetchModels(): Promise<string[]> {
     try {
       console.log('[SecretAiClient] Fetching models from:', this.baseUrl);
-      console.log('[SecretAiClient] Using wallet address:', this.wallet.address);
+      if (this.wallet) {
+        console.log('[SecretAiClient] Using wallet address:', this.wallet.address);
+      } else {
+        console.log('[SecretAiClient] Using API key authentication');
+      }
 
       const method = 'GET';
       const path = '/api/tags';
@@ -184,5 +217,12 @@ export class SecretAiClient {
    */
   getWalletAddress(): string | null {
     return this.wallet?.address || null;
+  }
+
+  /**
+   * Get current authentication method
+   */
+  getAuthMethod(): AuthMethod {
+    return this.authMethod;
   }
 }
