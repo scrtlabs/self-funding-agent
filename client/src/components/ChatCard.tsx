@@ -66,10 +66,14 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
           throw new Error('Failed to fetch models');
         }
         const data = await response.json();
-        setModels(data.models || []);
-        if (data.models && data.models.length > 0) {
+        const baseModels = data.models || [];
+        const availableModels = baseModels.includes('gpt-oss')
+          ? baseModels
+          : [...baseModels, 'gpt-oss'];
+        setModels(availableModels);
+        if (availableModels.length > 0) {
           // Try to set qwen3:8b as default, otherwise use first model
-          const defaultModel = data.models.find((m: string) => m === 'qwen3:8b') || data.models[0];
+          const defaultModel = availableModels.find((m: string) => m === 'qwen3:8b') || availableModels[0];
           setSelectedModel(defaultModel);
         }
         setIsLoading(false);

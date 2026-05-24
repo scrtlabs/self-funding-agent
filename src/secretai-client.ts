@@ -33,9 +33,10 @@ interface SecretAiClientOptions {
  * Resolve the appropriate SecretAI base URL based on the model
  */
 async function resolveSecretAiBaseUrl(model: string): Promise<string> {
-  // Use separate base URL for gpt-oss:120b model
+  // Route all gpt-oss variants to the jedi cluster
   const normalizedModel = model.toLowerCase().trim();
-  if (normalizedModel === 'gpt-oss:120b' || normalizedModel === 'gpt-oss' || normalizedModel === 'gptoss:120b' || normalizedModel === 'gptoss') {
+  const isGptOss = normalizedModel.startsWith('gpt-oss') || normalizedModel.startsWith('gptoss');
+  if (isGptOss) {
     return 'https://secretai-jedi.scrtlabs.com:21434';
   }
   return 'https://secretai-rytn.scrtlabs.com:21434';
