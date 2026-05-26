@@ -10,15 +10,12 @@ import { SecretAiClient } from './secretai-client.js';
 import buildInfo from './build-info.json' assert { type: 'json' };
 import { ChatHistoryRecord, OnchainChatStorage } from './onchain-chat-storage.js';
 
-// Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Hoist ESM import — secretvm-verify is ESM-only, cache it at startup
 let checkSecretVm: any;
 import('secretvm-verify').then((m) => { checkSecretVm = m.checkSecretVm; });
 
-// Secure wallet storage path (persistent volume in VM)
 const WALLET_STORAGE_PATH = process.env.WALLET_STORAGE_PATH || path.join(__dirname, '..', 'data', 'agent-wallet.json');
 
 interface WalletData {
