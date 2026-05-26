@@ -23,6 +23,11 @@ jobs:
       packages: write
 
     steps:
+      - name: Log deployment environment
+        run: |
+          echo "Environment: Integration"
+          echo "Ref: ${GITHUB_REF}"
+
       - name: Validate deployment secrets
         run: |
           if [ -z "${{ secrets.DEVPORTAL_API_URL }}" ]; then
@@ -112,6 +117,11 @@ jobs:
     environment: Integration
 
     steps:
+      - name: Log deployment environment
+        run: |
+          echo "Environment: Production"
+          echo "Ref: ${GITHUB_REF}"
+
       - name: Validate deployment secrets
         run: |
           if [ -z "${{ secrets.DEVPORTAL_API_URL }}" ]; then
