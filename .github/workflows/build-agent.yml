@@ -123,12 +123,17 @@ jobs:
     steps:
       - name: Log deployment environment
         run: |
-          echo "Environment: Production"
+          echo "Environment: Integration"
+          echo "Job: ${{ github.job }}"
           echo "Ref: ${GITHUB_REF}"
           echo "Event: ${{ github.event_name }}"
           echo "Workflow ref: ${{ github.workflow_ref }}"
           echo "SHA: ${{ github.sha }}"
           echo "Repository: ${{ github.repository }}"
+          if [ "${GITHUB_REF}" != "refs/heads/master" ]; then
+            echo "Unexpected ref for Integration deploy job"
+            exit 1
+          fi
 
       - name: Validate deployment secrets
         run: |
@@ -245,6 +250,20 @@ jobs:
     environment: Production
 
     steps:
+      - name: Log deployment environment
+        run: |
+          echo "Environment: Production"
+          echo "Job: ${{ github.job }}"
+          echo "Ref: ${GITHUB_REF}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Workflow ref: ${{ github.workflow_ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "Unexpected ref for Production deploy job"
+            exit 1
+          fi
+
       - name: Validate deployment secrets
         run: |
           if [ -z "${{ secrets.DEVPORTAL_API_URL }}" ]; then
