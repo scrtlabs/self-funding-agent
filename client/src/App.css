@@ -682,6 +682,14 @@ button:disabled {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .history-button:hover {
