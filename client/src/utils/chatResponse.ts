@@ -9,7 +9,10 @@ interface ChatResponse {
 /**
  * Extract content from various chat response formats
  */
-export function extractChatContent(response: ChatResponse): string {
+export function extractChatContent(response: ChatResponse | null | undefined): string {
+  if (!response) {
+    return '';
+  }
   if (response.message?.content) {
     return response.message.content;
   }
@@ -25,7 +28,10 @@ export function extractChatContent(response: ChatResponse): string {
 /**
  * Extract thinking content from chat response
  */
-export function extractThinkingContent(response: ChatResponse): string {
+export function extractThinkingContent(response: ChatResponse | null | undefined): string {
+  if (!response) {
+    return '';
+  }
   if (response.message?.thinking) {
     return response.message.thinking;
   }
