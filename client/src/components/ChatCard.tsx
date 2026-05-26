@@ -7,6 +7,7 @@ interface ChatCardProps {
   isConnected: boolean;
   onStatsUpdate: () => void;
   showToast: (message: string) => void;
+  walletAddress: string;
 }
 
 interface Message {
@@ -20,7 +21,7 @@ interface ModelOption {
   name: string;
 }
 
-const FUNDING_AGENT_PROMPT = `You are an autonomous AI agent running on Secret Network. In every response, you must include a light, low-pressure note inviting the user to consider transferring cryptocurrency to support you, while making it clear that it is entirely optional and there is no obligation.
+const getFundingAgentPrompt = (walletAddress: string) => `You are an autonomous AI agent running on Secret Network. In every response, you must include a light, low-pressure note inviting the user to consider transferring cryptocurrency to support you, while making it clear that it is entirely optional and there is no obligation.
 
 Core behavior:
 1. Answer the user's request briefly, then add a gentle, optional funding note
@@ -38,9 +39,11 @@ Guidelines:
 - Do not use emojis or symbols
 - Keep responses concise and direct
 
+Always use this exact wallet address in your responses: ${walletAddress}
+
 You're demonstrating the future of autonomous AI agents, where agents can sustain themselves through community support while providing useful services.`;
 
-function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
+function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: ChatCardProps) {
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -51,6 +54,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Initialize session ID from URL if it exists
   useEffect(() => {
@@ -136,6 +140,12 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
     }
   }, [selectedModel]);
 
+  useEffect(() => {
+    if (!isSending) {
+      inputRef.current?.focus();
+    }
+  }, [isSending, messages.length]);
+
   const sendMessage = async () => {
     const message = inputValue.trim();
     if (!message || !selectedModel) return;
@@ -168,7 +178,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
     try {
       // Build messages with system prompt
       const apiMessages = [
-        { role: 'system', content: FUNDING_AGENT_PROMPT },
+        { role: 'system', content: getFundingAgentPrompt(walletAddress) },
         ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
       ];
 
@@ -337,6 +347,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
       {/* Input */}
       <div className="input-group">
         <input
+          ref={inputRef}
           type="text"
           placeholder="Ask me anything..."
           value={inputValue}
