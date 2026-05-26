@@ -27,6 +27,10 @@ jobs:
         run: |
           echo "Environment: Integration"
           echo "Ref: ${GITHUB_REF}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Workflow ref: ${{ github.workflow_ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
 
       - name: Validate deployment secrets
         run: |
@@ -121,6 +125,10 @@ jobs:
         run: |
           echo "Environment: Production"
           echo "Ref: ${GITHUB_REF}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Workflow ref: ${{ github.workflow_ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
 
       - name: Validate deployment secrets
         run: |
