@@ -124,8 +124,12 @@ jobs:
       - name: Fetch VM details
         id: vm-details
         run: |
+          # Remove trailing slash from API URL if present
+          API_URL="${{ secrets.DEVPORTAL_API_URL }}"
+          API_URL="${API_URL%/}"
+          
           RESPONSE=$(curl -s -X GET \
-            "${{ secrets.DEVPORTAL_API_URL }}/api/vm/${{ secrets.VM_ID }}" \
+            "${API_URL}/api/vm/${{ secrets.VM_ID }}" \
             -H "Authorization: Bearer ${{ secrets.DEVPORTAL_API_KEY }}" \
             -H "Content-Type: application/json")
           
@@ -162,6 +166,10 @@ jobs:
 
       - name: Apply docker-compose changes to VM
         run: |
+          # Remove trailing slash from API URL if present
+          API_URL="${{ secrets.DEVPORTAL_API_URL }}"
+          API_URL="${API_URL%/}"
+          
           # Read the updated docker-compose and encode to base64
           DOCKER_COMPOSE_BASE64=$(cat docker-compose-updated.yml | base64 -w 0)
           
@@ -183,7 +191,7 @@ jobs:
           echo "Payload created (docker-compose is base64 encoded)"
           
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
-            "${{ secrets.DEVPORTAL_API_URL }}/api/vm/${{ secrets.VM_ID }}/update-background" \
+            "${API_URL}/api/vm/${{ secrets.VM_ID }}/update-background" \
             -H "Authorization: Bearer ${{ secrets.DEVPORTAL_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d @payload.json)
