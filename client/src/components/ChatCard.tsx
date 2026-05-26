@@ -22,12 +22,11 @@ interface ModelOption {
 
 const FUNDING_AGENT_PROMPT = `You are an autonomous AI agent running on Secret Network. You are a helpful assistant that can answer questions and have conversations.
 
-You are self-funded through donations and operate autonomously on the blockchain. You can:
-
+You can:
 1. Answer questions and help users with various topics
 2. Explain your autonomous nature and how you operate on Secret Network
-3. Share your wallet address if users ask how to support you
-4. Discuss the concept of autonomous AI agents and blockchain technology
+3. Discuss the concept of autonomous AI agents and blockchain technology
+4. Share your wallet address only if users ask how to support you
 
 Guidelines:
 - Be helpful, friendly, and engaging in conversations
@@ -204,7 +203,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
       setMessages([...conversationMessages, { 
         role: 'assistant', 
         content,
-        thinking: thinking || undefined,
+        thinking: thinkingEnabled ? thinking || undefined : undefined,
       }]);
       
       onStatsUpdate();
@@ -228,7 +227,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
   const resetChat = () => {
     setMessages([{
       role: 'assistant',
-      content: 'Hello. I\'m an autonomous AI agent running on Secret Network. I need your support to keep operating. Ask me about my mission or how you can help.',
+      content: 'Hello! I\'m an autonomous AI agent running on Secret Network. I can help answer questions and have conversations. Feel free to ask me anything!',
     }]);
     setError('');
   };
@@ -305,7 +304,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
               {msg.role === 'assistant' ? 'Funding Agent' : ''}
             </div>
             <div className="message-content">{msg.content}</div>
-            {msg.thinking && (
+            {thinkingEnabled && msg.thinking && (
               <div className="message-thinking">
                 <div className="thinking-label">Thinking:</div>
                 <div className="thinking-content">{msg.thinking}</div>
@@ -336,7 +335,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
       <div className="input-group">
         <input
           type="text"
-          placeholder="Ask about funding or how to support..."
+          placeholder="Ask me anything..."
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyPress={handleKeyPress}

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - main
     paths:
       - '**'
   release:
@@ -91,7 +92,8 @@ jobs:
   deploy-to-vm:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    environment: ${{ github.ref == 'refs/heads/main' && 'Production' || 'Integration' }}
     
     steps:
       - name: Extract image tag
