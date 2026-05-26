@@ -23,6 +23,22 @@ jobs:
       packages: write
 
     steps:
+      - name: Validate deployment secrets
+        run: |
+          if [ -z "${{ secrets.DEVPORTAL_API_URL }}" ]; then
+            echo "DEVPORTAL_API_URL is empty"
+            exit 1
+          fi
+          if [ -z "${{ secrets.VM_ID }}" ]; then
+            echo "VM_ID is empty"
+            exit 1
+          fi
+          if [ -z "${{ secrets.DEVPORTAL_API_KEY }}" ]; then
+            echo "DEVPORTAL_API_KEY is empty"
+            exit 1
+          fi
+          echo "DEVPORTAL_API_URL=${{ secrets.DEVPORTAL_API_URL }}"
+          echo "VM_ID set"
       - name: Checkout repository
         uses: actions/checkout@v4
 
