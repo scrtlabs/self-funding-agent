@@ -71,8 +71,16 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
         const data = await response.json();
         const modelsFromApi = data.models || [];
         
+        // Only show GPT-OSS:120B - comment out other models
+        const allModels = ['gpt-oss:120b'];
+        
+        // Uncomment to show all models from API:
+        // const allModels = modelsFromApi.includes('gpt-oss:120b') || modelsFromApi.includes('gpt-oss')
+        //   ? modelsFromApi
+        //   : [...modelsFromApi, 'gpt-oss:120b'];
+        
         // Map models to friendly names
-        const options: ModelOption[] = modelsFromApi.map((model: string) => {
+        const options: ModelOption[] = allModels.map((model: string) => {
           const key = model.toLowerCase().trim();
           const name = MODEL_DISPLAY_NAMES[key] || model;
           return { key: model, name };
