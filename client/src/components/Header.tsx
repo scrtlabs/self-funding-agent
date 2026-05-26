@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react';
+import { API_BASE } from '../config/api';
 
 interface HeaderProps {
   onBadgeClick: () => void;
   onHistoryClick: () => void;
 }
-
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:3002'
-  : `${window.location.protocol}//${window.location.hostname}`;
 
 const GITHUB_REPO = 'https://github.com/scrtlabs/self-funding-agent';
 

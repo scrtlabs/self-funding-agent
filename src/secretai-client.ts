@@ -158,22 +158,6 @@ export class SecretAiClient {
   }
 
   /**
-   * Extract content from chat response
-   */
-  extractContent(response: SecretAiChatResponse): string {
-    if (response.message?.content) {
-      return response.message.content;
-    }
-    if (response.response) {
-      return response.response;
-    }
-    if (response.choices?.[0]?.message?.content) {
-      return response.choices[0].message.content;
-    }
-    return '';
-  }
-
-  /**
    * Check if wallet is available
    */
   hasWallet(): boolean {

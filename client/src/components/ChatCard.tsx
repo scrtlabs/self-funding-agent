@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { MODEL_DISPLAY_NAMES } from '../constants/models';
+import { API_BASE } from '../config/api';
+import { extractChatContent, extractThinkingContent } from '../utils/chatResponse';
 
 interface ChatCardProps {
   isConnected: boolean;
@@ -12,11 +15,11 @@ interface Message {
   thinking?: string;
 }
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:3002'
-  : `${window.location.protocol}//${window.location.hostname}`;
+interface ModelOption {
+  key: string;
+  name: string;
+}
 
-// Funding agent system prompt
 const FUNDING_AGENT_PROMPT = `You are an autonomous AI agent running on Secret Network. You are a helpful assistant that can answer questions and have conversations.
 
 You are self-funded through donations and operate autonomously on the blockchain. You can:
@@ -36,7 +39,7 @@ Guidelines:
 You're demonstrating the future of autonomous AI agents, where agents can sustain themselves through community support while providing useful services.`;
 
 function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
-  const [models, setModels] = useState<string[]>([]);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -66,16 +69,20 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
           throw new Error('Failed to fetch models');
         }
         const data = await response.json();
-        const baseModels = data.models || [];
-        const availableModels = baseModels.includes('gpt-oss')
-          ? baseModels
-          : [...baseModels, 'gpt-oss'];
-        setModels(availableModels);
-        if (availableModels.length > 0) {
-          // Try to set qwen3:8b as default, otherwise use first model
-          const defaultModel = availableModels.find((m: string) => m === 'qwen3:8b') || availableModels[0];
-          setSelectedModel(defaultModel);
+        const modelsFromApi = data.models || [];
+        
+        // Map models to friendly names
+        const options: ModelOption[] = modelsFromApi.map((model: string) => {
+          const key = model.toLowerCase().trim();
+          const name = MODEL_DISPLAY_NAMES[key] || model;
+          return { key: model, name };
+        });
+
+        if (options.length > 0) {
+          setModelOptions(options);
+          setSelectedModel(options[0].key);
         }
+        
         setIsLoading(false);
       } catch (error: any) {
         console.error('Error fetching models:', error);
@@ -91,13 +98,13 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
 
   // Initial greeting message
   useEffect(() => {
-    if (!isLoading && models.length > 0) {
+    if (!isLoading && modelOptions.length > 0) {
       setMessages([{
         role: 'assistant',
         content: 'Hello! I\'m an autonomous AI agent running on Secret Network. I can help answer questions and have conversations. Feel free to ask me anything!',
       }]);
     }
-  }, [isLoading, models]);
+  }, [isLoading, modelOptions]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -179,17 +186,8 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
       const data = await response.json();
       
       // Extract content from response
-      let content = '';
-      let thinking = '';
-      
-      if (data.message?.content) {
-        content = data.message.content;
-        thinking = data.message.thinking || '';
-      } else if (data.response) {
-        content = data.response;
-      } else if (data.choices?.[0]?.message?.content) {
-        content = data.choices[0].message.content;
-      }
+      const content = extractChatContent(data);
+      const thinking = extractThinkingContent(data);
 
       if (!content) {
         throw new Error('Empty response from SecretAI');
@@ -239,7 +237,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
     );
   }
 
-  if (models.length === 0) {
+  if (modelOptions.length === 0) {
     return (
       <div className="card">
         <div className="card-title">Chat with Funding Agent</div>
@@ -264,8 +262,8 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
             onChange={(e) => setSelectedModel(e.target.value)}
             disabled={isSending}
           >
-            {models.map(model => (
-              <option key={model} value={model}>{model}</option>
+            {modelOptions.map(model => (
+              <option key={model.key} value={model.key}>{model.name}</option>
             ))}
           </select>
         </div>

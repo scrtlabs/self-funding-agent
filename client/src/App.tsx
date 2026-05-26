@@ -7,11 +7,8 @@ import AttestationPanel from './components/AttestationPanel'
 import Toast from './components/Toast'
 import UsageHistoryCard from './components/UsageHistoryCard'
 import ChatHistoryPage from './components/ChatHistoryPage'
+import { API_BASE } from './config/api'
 import './App.css'
-
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:3002'
-  : `${window.location.protocol}//${window.location.hostname}`;
 
 export interface Stats {
   totalRequests: number;

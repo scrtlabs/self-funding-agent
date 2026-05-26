@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import './AttestationPanel.css';
+import { API_BASE } from '../config/api';
 
 interface AttestationPanelProps {
   isOpen: boolean;
@@ -26,12 +27,6 @@ interface AttestationData {
       passed: boolean | null;
       fingerprint: string | null;
     };
-    gpu: {
-      passed: boolean | null;
-      cpuBound: boolean | null;
-      model: string | null;
-      secureBoot: boolean | null;
-    };
     proofOfCloud: {
       passed: boolean | null;
     };
@@ -39,13 +34,8 @@ interface AttestationData {
   links?: {
     cpuQuote: string;
     dockerCompose: string;
-    gpuAttestation: string;
   };
 }
-
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:3002'
-  : `${window.location.protocol}//${window.location.hostname}`;
 
 function AttestationPanel({ isOpen, onClose }: AttestationPanelProps) {
   const [attestationData, setAttestationData] = useState<AttestationData | null>(null);
@@ -181,20 +171,6 @@ function AttestationPanel({ isOpen, onClose }: AttestationPanelProps) {
                 [
                   { label: 'TLS Fingerprint', value: attestationData.checks.tlsBinding.fingerprint },
                 ]
-              )}
-              {renderAttestItem(
-                'gpu',
-                'GPU Attestation',
-                attestationData.checks.gpu.passed
-                  ? "The NVIDIA GPU has been verified through NVIDIA's Remote Attestation Service. Secure boot is active and all firmware measurements are valid. Verified GPU and CPU attestation binding through report_data."
-                  : "GPU attestation could not be verified. The GPU's integrity could not be confirmed through NVIDIA's Remote Attestation Service.",
-                attestationData.checks.gpu.passed,
-                [
-                  { label: 'GPU Model', value: attestationData.checks.gpu.model },
-                  { label: 'Secure Boot', value: attestationData.checks.gpu.secureBoot === true ? 'Enabled' : attestationData.checks.gpu.secureBoot === false ? 'Disabled' : null },
-                  { label: 'CPU Binding', value: attestationData.checks.gpu.cpuBound === true ? 'Verified' : attestationData.checks.gpu.cpuBound === false ? 'Failed' : null },
-                ],
-                attestationData.links ? { url: attestationData.links.gpuAttestation, text: 'View GPU attestation report' } : undefined
               )}
               {renderAttestItem(
                 'poc',

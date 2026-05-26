@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { API_BASE } from '../config/api';
+import { extractChatContent, extractThinkingContent } from '../utils/chatResponse';
 
 interface ChatHistoryRecord {
   requestId: string;
@@ -20,10 +22,6 @@ interface ChatSession {
   lastTimestamp: string;
   messageCount: number;
 }
-
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:3002'
-  : `${window.location.protocol}//${window.location.hostname}`;
 
 interface ChatHistoryPageProps {
   onBack: () => void;
@@ -195,8 +193,7 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
       userMessage = lastUserMsg?.content || '';
     }
     
-    // Extract assistant response
-    // The lightweight payload stores response as: { content: "...", thinking: "..." }
+    // Extract assistant response using shared utility
     let assistantMessage = '';
     let thinking = '';
     
@@ -204,14 +201,10 @@ function ChatHistoryPage({ onBack }: ChatHistoryPageProps) {
       // Lightweight payload format (v2.0)
       assistantMessage = response.content;
       thinking = response.thinking || '';
-    } else if (response?.message?.content) {
-      // Legacy format
-      assistantMessage = response.message.content;
-      thinking = response.message.thinking || '';
-    } else if (response?.response) {
-      assistantMessage = response.response;
-    } else if (response?.choices?.[0]?.message?.content) {
-      assistantMessage = response.choices[0].message.content;
+    } else {
+      // Use shared utility for other formats
+      assistantMessage = extractChatContent(response);
+      thinking = extractThinkingContent(response);
     }
     
     return { userMessage, assistantMessage, thinking };

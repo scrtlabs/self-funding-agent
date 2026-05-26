@@ -80,7 +80,7 @@ export default function UsageHistoryCard({ apiBase }: UsageHistoryCardProps) {
       ) : null}
 
       {usageHistory && usageHistory.dayGroups.length === 0 ? (
-        <div className="loading-message">No usage entries yet.</div>
+        <div className="loading-message" style={{ textAlign: 'center', color: 'white' }}>No usage entries yet.</div>
       ) : null}
 
       {usageHistory?.dayGroups?.map((group) => (
