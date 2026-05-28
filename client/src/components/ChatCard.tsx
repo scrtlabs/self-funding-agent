@@ -14,6 +14,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   thinking?: string;
+  cid?: string;
 }
 
 interface ModelOption {
@@ -55,6 +56,24 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
   const [sessionId, setSessionId] = useState<string>('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch CID for a specific message from chat history
+  const fetchCidForMessage = async (sessionId: string, messageIndex: number): Promise<string | null> => {
+    try {
+      const response = await fetch(`${API_BASE}/api/chat-history?limit=100&offset=0`);
+      if (!response.ok) return null;
+      
+      const data = await response.json();
+      const record = data.records.find((r: any) => 
+        r.sessionId === sessionId && r.messageIndex === messageIndex
+      );
+      
+      return record?.cid || null;
+    } catch (error) {
+      console.error('Error fetching CID:', error);
+      return null;
+    }
+  };
 
   // Initialize session ID from URL if it exists
   useEffect(() => {
@@ -115,7 +134,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
     if (!isLoading && modelOptions.length > 0) {
       setMessages([{
         role: 'assistant',
-        content: 'Hello! I\'m an autonomous AI agent running on Secret Network. I can help answer questions and have conversations. Feel free to ask me anything!',
+        content: 'Hello! I\'m an autonomous AI agent running on Secret Network with portable memory backed by Autonomys. I can help answer questions and have conversations. Feel free to ask me anything!',
       }]);
     }
   }, [isLoading, modelOptions]);
@@ -220,6 +239,18 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
       }]);
       
       onStatsUpdate();
+      
+      // Fetch CID after a short delay to allow backend to store it
+      setTimeout(async () => {
+        const cid = await fetchCidForMessage(currentSessionId, messageIndex);
+        if (cid) {
+          setMessages(prevMessages => 
+            prevMessages.map((msg, idx) => 
+              idx === prevMessages.length - 1 ? { ...msg, cid } : msg
+            )
+          );
+        }
+      }, 2000);
     } catch (error: any) {
       setError(error.message || 'Failed to send message');
       setMessages([...conversationMessages, { 
@@ -240,7 +271,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
   const resetChat = () => {
     setMessages([{
       role: 'assistant',
-      content: 'Hello! I\'m an autonomous AI agent running on Secret Network. I can help answer questions and have conversations. Feel free to ask me anything!',
+      content: 'Hello! I\'m an autonomous AI agent running on Secret Network with portable memory backed by Autonomys. I can help answer questions and have conversations. Feel free to ask me anything!',
     }]);
     setError('');
   };
@@ -321,6 +352,18 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
               <div className="message-thinking">
                 <div className="thinking-label">Thinking:</div>
                 <div className="thinking-content">{msg.thinking}</div>
+              </div>
+            )}
+            {msg.cid && (
+              <div className="message-autonomys">
+                <a 
+                  href={`https://explorer.ai3.storage/mainnet/drive/metadata/${msg.cid}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: '0.85em', color: '#888', textDecoration: 'none' }}
+                >
+                  💾 Memory saved to Autonomys
+                </a>
               </div>
             )}
           </div>
