@@ -116,6 +116,7 @@ function App() {
             onStatsUpdate={loadStats}
             showToast={showToastMessage}
             walletAddress={walletAddress}
+            onViewHistory={() => setShowHistory(true)}
           />
         </div>
 

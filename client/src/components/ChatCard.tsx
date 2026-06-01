@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { MODEL_DISPLAY_NAMES } from '../constants/models';
 import { API_BASE } from '../config/api';
 import { extractChatContent, extractThinkingContent } from '../utils/chatResponse';
@@ -8,6 +10,7 @@ interface ChatCardProps {
   onStatsUpdate: () => void;
   showToast: (message: string) => void;
   walletAddress: string;
+  onViewHistory?: () => void;
 }
 
 interface Message {
@@ -44,7 +47,7 @@ Always use this exact wallet address in your responses: ${walletAddress}
 
 You're demonstrating the future of autonomous AI agents, where agents can sustain themselves through community support while providing useful services.`;
 
-function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: ChatCardProps) {
+function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onViewHistory }: ChatCardProps) {
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -134,7 +137,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
     if (!isLoading && modelOptions.length > 0) {
       setMessages([{
         role: 'assistant',
-        content: 'Hello! I\'m an autonomous AI agent running on Secret Network with portable memory backed by Autonomys. I can help answer questions and have conversations. Feel free to ask me anything!',
+        content: 'Hello. I\'m an autonomous AI agent running inside a SecretVM trusted execution environment.\n\nI have my own sealed wallet, which only I can access, and I can use it to help pay for my own compute. I also have persistent memory backed by Autonomys Auto Drive, so my conversation history can outlive this specific VM instance.\n\nThat means if this VM is stopped and a new one starts, I can reload my prior memory from Autonomys and continue from where I left off.\n\nYou can ask me questions, inspect what I remember, or help support my future compute costs if you choose.',
       }]);
     }
   }, [isLoading, modelOptions]);
@@ -249,6 +252,16 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
               idx === prevMessages.length - 1 ? { ...msg, cid } : msg
             )
           );
+          
+          // Show toast notification
+          toast.success('Memory saved to Autonomys', {
+            position: "bottom-right",
+            autoClose: 2500,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
         }
       }, 2000);
     } catch (error: any) {
@@ -271,7 +284,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
   const resetChat = () => {
     setMessages([{
       role: 'assistant',
-      content: 'Hello! I\'m an autonomous AI agent running on Secret Network with portable memory backed by Autonomys. I can help answer questions and have conversations. Feel free to ask me anything!',
+      content: 'Hello. I\'m an autonomous AI agent running inside a SecretVM trusted execution environment.\n\nI have my own sealed wallet, which only I can access, and I can use it to help pay for my own compute. I also have persistent memory backed by Autonomys Auto Drive, so my conversation history can outlive this specific VM instance.\n\nThat means if this VM is stopped and a new one starts, I can reload my prior memory from Autonomys and continue from where I left off.\n\nYou can ask me questions, inspect what I remember, or help support my future compute costs if you choose.',
     }]);
     setError('');
   };
@@ -338,6 +351,16 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
         >
           Reset
         </button>
+        
+        {onViewHistory && sessionId && (
+          <button 
+            onClick={onViewHistory}
+            disabled={isSending}
+            style={{ marginLeft: '8px' }}
+          >
+            View Memory Trail
+          </button>
+        )}
       </div>
 
       {/* Chat messages */}
@@ -355,14 +378,25 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
               </div>
             )}
             {msg.cid && (
-              <div className="message-autonomys">
+              <div className="message-autonomys" style={{ 
+                marginTop: '8px', 
+                padding: '6px 10px', 
+                background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
+                borderLeft: '3px solid #8b5cf6',
+                borderRadius: '4px',
+                fontSize: '0.85em'
+              }}>
                 <a 
                   href={`https://explorer.ai3.storage/mainnet/drive/metadata/${msg.cid}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ fontSize: '0.85em', color: '#888', textDecoration: 'none' }}
+                  style={{ 
+                    color: '#8b5cf6', 
+                    textDecoration: 'none',
+                    fontWeight: '500'
+                  }}
                 >
-                  💾 Memory saved to Autonomys
+                  Memory saved to Autonomys
                 </a>
               </div>
             )}
@@ -402,6 +436,29 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress }: Chat
           Send
         </button>
       </div>
+      
+      {/* Toast notifications */}
+      <ToastContainer
+        position="bottom-right"
+        autoClose={2500}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+        style={{
+          fontSize: '14px',
+        }}
+        toastStyle={{
+          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.95) 0%, rgba(59, 130, 246, 0.95) 100%)',
+          color: '#fff',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        }}
+      />
     </div>
   );
 }
