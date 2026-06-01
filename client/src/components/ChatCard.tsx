@@ -254,7 +254,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onView
           );
           
           // Show toast notification
-          toast.success('Memory saved to Autonomys', {
+          toast.success('Memory saved to Autonomys Network', {
             position: "bottom-right",
             autoClose: 2500,
             hideProgressBar: false,
@@ -379,13 +379,21 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onView
             )}
             {msg.cid && (
               <div className="message-autonomys" style={{ 
-                marginTop: '8px', 
-                padding: '6px 10px', 
-                background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)',
+                marginTop: '10px', 
+                padding: '8px 12px', 
+                background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)',
                 borderLeft: '3px solid #8b5cf6',
-                borderRadius: '4px',
-                fontSize: '0.85em'
+                borderRadius: '6px',
+                fontSize: '0.875em',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <line x1="10" y1="14" x2="21" y2="3"></line>
+                </svg>
                 <a 
                   href={`https://explorer.ai3.storage/mainnet/drive/metadata/${msg.cid}`}
                   target="_blank"
@@ -393,10 +401,13 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onView
                   style={{ 
                     color: '#8b5cf6', 
                     textDecoration: 'none',
-                    fontWeight: '500'
+                    fontWeight: '500',
+                    transition: 'opacity 0.2s'
                   }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                 >
-                  Memory saved to Autonomys
+                  View on Autonomys
                 </a>
               </div>
             )}
