@@ -46,13 +46,14 @@ function App() {
   };
 
   const showAutonomysToast = () => {
-    toast.success('Memory saved to Autonomys Network', {
+    toast('Memory saved to Autonomys Network', {
       position: "bottom-right",
       autoClose: 2500,
-      hideProgressBar: false,
+      hideProgressBar: true,
       closeOnClick: true,
       pauseOnHover: true,
       draggable: true,
+      icon: false,
     });
   };
 
@@ -147,7 +148,7 @@ function App() {
       <ToastContainer
         position="bottom-right"
         autoClose={2500}
-        hideProgressBar={false}
+        hideProgressBar={true}
         newestOnTop={false}
         closeOnClick
         rtl={false}
@@ -155,6 +156,7 @@ function App() {
         draggable
         pauseOnHover
         theme="dark"
+        icon={false}
         style={{
           fontSize: '14px',
         }}
