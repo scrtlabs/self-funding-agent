@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { toast, ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 import Header from './components/Header'
 import BalanceHero from './components/BalanceHero'
 import ChatCard from './components/ChatCard'
@@ -41,6 +43,17 @@ function App() {
     setToastMessage(message);
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
+  };
+
+  const showAutonomysToast = () => {
+    toast.success('Memory saved to Autonomys Network', {
+      position: "bottom-right",
+      autoClose: 2500,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+    });
   };
 
   const checkHealth = async () => {
@@ -117,6 +130,7 @@ function App() {
             showToast={showToastMessage}
             walletAddress={walletAddress}
             onViewHistory={() => setShowHistory(true)}
+            onMemorySaved={showAutonomysToast}
           />
         </div>
 
@@ -130,6 +144,28 @@ function App() {
           isOpen={panelOpen}
           onClose={() => setPanelOpen(false)}
         />
+      <ToastContainer
+        position="bottom-right"
+        autoClose={2500}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+        style={{
+          fontSize: '14px',
+        }}
+        toastStyle={{
+          background: 'rgba(30, 41, 59, 0.95)',
+          color: '#fff',
+          borderRadius: '8px',
+          border: '1px solid rgba(139, 92, 246, 0.3)',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        }}
+      />
         </>
       )}
     </>

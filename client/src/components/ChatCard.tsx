@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
 import { MODEL_DISPLAY_NAMES } from '../constants/models';
 import { API_BASE } from '../config/api';
 import { extractChatContent, extractThinkingContent } from '../utils/chatResponse';
@@ -11,6 +9,7 @@ interface ChatCardProps {
   showToast: (message: string) => void;
   walletAddress: string;
   onViewHistory?: () => void;
+  onMemorySaved?: () => void;
 }
 
 interface Message {
@@ -47,7 +46,7 @@ Always use this exact wallet address in your responses: ${walletAddress}
 
 You're demonstrating the future of autonomous AI agents, where agents can sustain themselves through community support while providing useful services.`;
 
-function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onViewHistory }: ChatCardProps) {
+function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onViewHistory, onMemorySaved }: ChatCardProps) {
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -253,15 +252,8 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onView
             )
           );
           
-          // Show toast notification
-          toast.success('Memory saved to Autonomys Network', {
-            position: "bottom-right",
-            autoClose: 2500,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-          });
+          // Show toast notification via parent
+          onMemorySaved?.();
         }
       }, 2000);
     } catch (error: any) {
@@ -384,16 +376,8 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onView
                 background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)',
                 borderLeft: '3px solid #8b5cf6',
                 borderRadius: '6px',
-                fontSize: '0.875em',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
+                fontSize: '0.875em'
               }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                  <polyline points="15 3 21 3 21 9"></polyline>
-                  <line x1="10" y1="14" x2="21" y2="3"></line>
-                </svg>
                 <a 
                   href={`https://explorer.ai3.storage/mainnet/drive/metadata/${msg.cid}`}
                   target="_blank"
@@ -447,29 +431,6 @@ function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onView
           Send
         </button>
       </div>
-      
-      {/* Toast notifications */}
-      <ToastContainer
-        position="bottom-right"
-        autoClose={2500}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-        style={{
-          fontSize: '14px',
-        }}
-        toastStyle={{
-          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.95) 0%, rgba(59, 130, 246, 0.95) 100%)',
-          color: '#fff',
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-        }}
-      />
     </div>
   );
 }
