@@ -30,9 +30,20 @@ interface OnchainChatStorageOptions {
   forcePathStyle: boolean;
   retryCount: number;
   retryBaseDelayMs: number;
+  /**
+   * Stable identifier for the agent that produces these records (defaults to VM_ID).
+   * It is embedded in the auto drive object key and filename so every record is
+   * clearly attributable to this exact agent.
+   */
+  agentId: string;
 }
 
 type Logger = (...args: any[]) => void;
+
+/** Normalize an identifier so it is safe to use inside object keys and filenames. */
+function sanitizeIdentifier(value: string): string {
+  return (value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown-agent';
+}
 
 /**
  * Persists chat transcripts to Autonomys Auto Drive via the S3-compatible API.
@@ -80,6 +91,9 @@ export class OnchainChatStorage {
       100,
     );
     const enabledFlag = (process.env.AUTONOMYS_CHAT_HISTORY_ENABLED || 'false').toLowerCase() === 'true';
+    const agentId = sanitizeIdentifier(
+      process.env.VM_ID || process.env.FUNDING_AGENT_VM_ID || 'unknown-agent',
+    );
 
     const isBucketUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
@@ -136,6 +150,7 @@ export class OnchainChatStorage {
         region,
         keyPrefix: keyPrefix || 'chat-history',
         forcePathStyle: forcePathStyleEnv || !bucket,
+        agentId,
       });
     }
 
@@ -150,6 +165,7 @@ export class OnchainChatStorage {
       forcePathStyle: forcePathStyleEnv || !bucket,
       retryCount,
       retryBaseDelayMs,
+      agentId,
     });
   }
 
@@ -223,24 +239,30 @@ export class OnchainChatStorage {
     const year = String(eventDate.getUTCFullYear());
     const month = String(eventDate.getUTCMonth() + 1).padStart(2, '0');
     const day = String(eventDate.getUTCDate()).padStart(2, '0');
-    
+
+    // Agent identifier (VM_ID) so every record is attributable to this exact agent.
+    const agentId = this.options.agentId;
+
     // Extract session ID from record or metadata
     const sessionId = record.sessionId || (record.metadata?.sessionId as string) || 'no-session';
     const safeSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    
+
     // Use message index if available, otherwise use timestamp
     const messageIndex = record.messageIndex !== undefined ? String(record.messageIndex).padStart(4, '0') : null;
-    
-    // Build filename: sessionId-messageIndex-timestamp.json or sessionId-timestamp-requestId.json
+
+    // Build filename with the agent id prefixed so the name itself identifies the producer:
+    //   agentId-sessionId-messageIndex-timestamp.json
+    //   agentId-sessionId-timestamp-requestId.json
     let fileName: string;
     if (messageIndex !== null) {
-      fileName = `${safeSessionId}-${messageIndex}-${eventDate.getTime()}.json`;
+      fileName = `${agentId}-${safeSessionId}-${messageIndex}-${eventDate.getTime()}.json`;
     } else {
       const safeRequestId = (record.requestId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, '_');
-      fileName = `${safeSessionId}-${eventDate.getTime()}-${safeRequestId}.json`;
+      fileName = `${agentId}-${safeSessionId}-${eventDate.getTime()}-${safeRequestId}.json`;
     }
 
-    return [this.options.keyPrefix, year, month, day, fileName].filter(Boolean).join('/');
+    // Also namespace the path by agent id so records are grouped per agent.
+    return [this.options.keyPrefix, agentId, year, month, day, fileName].filter(Boolean).join('/');
   }
 
   private async putObjectWithRetry(objectKey: string, payload: string): Promise<string | null> {
@@ -413,7 +435,11 @@ export class OnchainChatStorage {
           continue; // Skip non-history files
         }
         
-        const [, sessionId, messageIndexStr, timestampStr] = match;
+        const [, head, messageIndexStr, timestampStr] = match;
+        // Filenames are now prefixed with the agent id (agentId-sessionId-...).
+        // Strip it back off to recover the original session id for display.
+        const agentPrefix = `${this.options.agentId}-`;
+        const sessionId = head.startsWith(agentPrefix) ? head.slice(agentPrefix.length) : head;
         const messageIndex = parseInt(messageIndexStr, 10);
         const timestamp = new Date(parseInt(timestampStr, 10)).toISOString();
         
