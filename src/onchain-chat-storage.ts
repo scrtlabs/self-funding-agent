@@ -3,6 +3,38 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createAutoDriveApi } from '@autonomys/auto-drive';
 import { NetworkId } from '@autonomys/auto-utils';
 
+/**
+ * Minimal signer interface (satisfied by ethers.Wallet / ethers.HDNodeWallet).
+ * Used to cryptographically sign agent experiences before upload.
+ */
+export interface ExperienceSigner {
+  address: string;
+  signMessage(message: string): Promise<string>;
+}
+
+/**
+ * Header describing an agent experience, mirroring the structure used in
+ * autonomys-agents. `previousCid` links this record to the previous one,
+ * forming a linked list of the agent's memory.
+ */
+export interface ExperienceHeader {
+  agentVersion: string;
+  agentId: string;
+  agentAddress?: string;
+  timestamp: string;
+  previousCid?: string;
+}
+
+/**
+ * A signed, self-describing agent experience. This is what gets persisted to
+ * auto drive instead of a raw conversation transcript.
+ */
+export interface AgentExperience {
+  header: ExperienceHeader;
+  data: unknown;
+  signature: string;
+}
+
 export interface ChatHistoryRecord {
   requestId: string;
   endpoint: string;
@@ -36,6 +68,8 @@ interface OnchainChatStorageOptions {
    * clearly attributable to this exact agent.
    */
   agentId: string;
+  /** Version string recorded in every experience header. */
+  agentVersion: string;
 }
 
 type Logger = (...args: any[]) => void;
@@ -54,6 +88,7 @@ export class OnchainChatStorage {
   private s3Client: S3Client | null = null;
   private s3Bucket: string | null = null;
   private autoDriveApi: any = null;
+  private signer: ExperienceSigner | null = null;
 
   constructor(options: OnchainChatStorageOptions) {
     this.options = options;
@@ -94,6 +129,11 @@ export class OnchainChatStorage {
     const agentId = sanitizeIdentifier(
       process.env.VM_ID || process.env.FUNDING_AGENT_VM_ID || 'unknown-agent',
     );
+    const agentVersion = (
+      process.env.AGENT_VERSION ||
+      process.env.npm_package_version ||
+      'unknown'
+    ).trim();
 
     const isBucketUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
@@ -151,6 +191,7 @@ export class OnchainChatStorage {
         keyPrefix: keyPrefix || 'chat-history',
         forcePathStyle: forcePathStyleEnv || !bucket,
         agentId,
+        agentVersion,
       });
     }
 
@@ -166,11 +207,24 @@ export class OnchainChatStorage {
       retryCount,
       retryBaseDelayMs,
       agentId,
+      agentVersion,
     });
   }
 
   isEnabled(): boolean {
     return this.options.enabled;
+  }
+
+  /**
+   * Provide the agent wallet so experiences can be cryptographically signed.
+   * Called once the wallet has been initialized (it is created after this
+   * storage instance, which is built from env at module load).
+   */
+  setSigner(signer: ExperienceSigner | null): void {
+    this.signer = signer;
+    if (signer) {
+      console.log(`[OnchainChatStorage] Experience signer set (${signer.address})`);
+    }
   }
 
   async store(record: ChatHistoryRecord): Promise<string | null> {
@@ -179,22 +233,55 @@ export class OnchainChatStorage {
     }
 
     const objectKey = this.buildObjectKey(record);
-    
-    // Create lightweight payload - remove system prompts and unnecessary data
-    const lightweightPayload = this.createLightweightPayload(record);
-    const payload = JSON.stringify(lightweightPayload, null, 2);
+
+    // Build a signed agent experience (header + data + signature) instead of a
+    // raw conversation transcript.
+    const experience = await this.buildExperience(record);
+    const payload = JSON.stringify(experience, null, 2);
 
     const cid = await this.putObjectWithRetry(objectKey, payload);
-    
+
     // Store CID in the record
     if (cid) {
       record.cid = cid;
     }
-    
+
     return objectKey;
   }
 
-  private createLightweightPayload(record: ChatHistoryRecord): any {
+  /**
+   * Wrap the extracted experience data in a signed envelope:
+   *   { header: { agentVersion, agentId, agentAddress, timestamp }, data, signature }
+   * The signature is produced by the agent wallet over JSON.stringify({ header, data }),
+   * mirroring the experience format used in autonomys-agents.
+   */
+  private async buildExperience(record: ChatHistoryRecord): Promise<AgentExperience> {
+    const header: ExperienceHeader = {
+      agentVersion: this.options.agentVersion,
+      agentId: this.options.agentId,
+      agentAddress: this.signer?.address,
+      timestamp: record.timestamp,
+    };
+
+    const data = this.extractExperienceData(record);
+
+    let signature = '';
+    if (this.signer) {
+      try {
+        signature = await this.signer.signMessage(JSON.stringify({ header, data }));
+      } catch (error) {
+        console.warn('[OnchainChatStorage] Failed to sign experience:', error);
+      }
+    }
+
+    return { header, data, signature };
+  }
+
+  /**
+   * Extract the meaningful, system-prompt-free content of a chat exchange.
+   * This is the `data` payload of an agent experience.
+   */
+  private extractExperienceData(record: ChatHistoryRecord): any {
     const request = record.request as any;
     const response = record.response as any;
     
@@ -223,10 +310,9 @@ export class OnchainChatStorage {
     }
     
     return {
-      version: '2.0',
+      schemaVersion: '3.0-experience',
       sessionId: record.sessionId || record.metadata?.sessionId || null,
-      messageIndex: record.messageIndex || null,
-      timestamp: record.timestamp,
+      messageIndex: record.messageIndex ?? null,
       messages: cleanMessages,
       response: assistantResponse,
       model: request?.model || null,
