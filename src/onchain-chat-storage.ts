@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createAutoDriveApi } from '@autonomys/auto-drive';
 import { NetworkId } from '@autonomys/auto-utils';
+import { AgentMemoryCidManager } from './agent-memory-cid-manager.js';
 
 /**
  * Minimal signer interface (satisfied by ethers.Wallet / ethers.HDNodeWallet).
@@ -70,6 +71,8 @@ interface OnchainChatStorageOptions {
   agentId: string;
   /** Version string recorded in every experience header. */
   agentVersion: string;
+  /** Local file used to track the head CID of each session's experience chain. */
+  cidStorePath: string;
 }
 
 type Logger = (...args: any[]) => void;
@@ -89,9 +92,16 @@ export class OnchainChatStorage {
   private s3Bucket: string | null = null;
   private autoDriveApi: any = null;
   private signer: ExperienceSigner | null = null;
+  private cidManager: AgentMemoryCidManager | null = null;
 
   constructor(options: OnchainChatStorageOptions) {
     this.options = options;
+
+    // Per-session linked-list tracker for chaining experiences on Auto Drive
+    // (head CID per session is tracked in a local JSON file).
+    if (options.enabled) {
+      this.cidManager = new AgentMemoryCidManager(options.cidStorePath);
+    }
     
     // Initialize Auto Drive API if enabled
     if (options.enabled && options.accessKeyId) {
@@ -133,6 +143,9 @@ export class OnchainChatStorage {
       process.env.AGENT_VERSION ||
       process.env.npm_package_version ||
       'unknown'
+    ).trim();
+    const cidStorePath = (
+      process.env.AGENT_MEMORY_CID_PATH || './data/agent-memory-cids.json'
     ).trim();
 
     const isBucketUrl = (value: string): boolean => /^https?:\/\//i.test(value);
@@ -192,6 +205,7 @@ export class OnchainChatStorage {
         forcePathStyle: forcePathStyleEnv || !bucket,
         agentId,
         agentVersion,
+        cidStorePath,
       });
     }
 
@@ -208,6 +222,7 @@ export class OnchainChatStorage {
       retryBaseDelayMs,
       agentId,
       agentVersion,
+      cidStorePath,
     });
   }
 
@@ -232,21 +247,56 @@ export class OnchainChatStorage {
       return null;
     }
 
-    const objectKey = this.buildObjectKey(record);
+    const sessionKey = this.resolveSessionKey(record);
+    const objectKey = this.buildObjectKey(record, sessionKey);
 
-    // Build a signed agent experience (header + data + signature) instead of a
-    // raw conversation transcript.
-    const experience = await this.buildExperience(record);
+    // Look up the head of this session's experience chain so we can link to it.
+    const previous = this.cidManager ? this.cidManager.getLast(sessionKey) : undefined;
+    const previousCid = previous?.cid;
+    const previousCount = previous?.messageCount ?? 0;
+
+    // Build a signed agent experience (header + data + signature) that stores
+    // only the new context for this turn and points back to the previous record.
+    const experience = await this.buildExperience(record, previousCid, previousCount);
     const payload = JSON.stringify(experience, null, 2);
 
     const cid = await this.putObjectWithRetry(objectKey, payload);
 
-    // Store CID in the record
+    // Store CID in the record and advance this session's chain head.
     if (cid) {
       record.cid = cid;
+      if (this.cidManager) {
+        // For cumulative-history clients, the new head reflects how many messages
+        // have now been captured; for single-message requests we keep the count
+        // unchanged so each independent request is stored in full.
+        const cumulative = this.cumulativeMessageCount(record);
+        const newCount = cumulative ?? previousCount;
+        this.cidManager.saveLastCid(sessionKey, cid, newCount);
+      }
     }
 
     return objectKey;
+  }
+
+  /**
+   * Stable, sanitized per-session key. The same value is used for the linked-list
+   * chain and the object key/filename, so they stay consistent.
+   */
+  private resolveSessionKey(record: ChatHistoryRecord): string {
+    const raw = record.sessionId || (record.metadata?.sessionId as string) || 'no-session';
+    return raw.replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  /**
+   * Number of cumulative (system-free) messages in the request, or null when the
+   * request is not a cumulative conversation array (e.g. /api/chat single message).
+   */
+  private cumulativeMessageCount(record: ChatHistoryRecord): number | null {
+    const request = record.request as any;
+    if (!Array.isArray(request?.messages)) {
+      return null;
+    }
+    return request.messages.filter((msg: any) => msg.role !== 'system').length;
   }
 
   /**
@@ -255,15 +305,20 @@ export class OnchainChatStorage {
    * The signature is produced by the agent wallet over JSON.stringify({ header, data }),
    * mirroring the experience format used in autonomys-agents.
    */
-  private async buildExperience(record: ChatHistoryRecord): Promise<AgentExperience> {
+  private async buildExperience(
+    record: ChatHistoryRecord,
+    previousCid?: string,
+    previousCount = 0,
+  ): Promise<AgentExperience> {
     const header: ExperienceHeader = {
       agentVersion: this.options.agentVersion,
       agentId: this.options.agentId,
       agentAddress: this.signer?.address,
       timestamp: record.timestamp,
+      previousCid,
     };
 
-    const data = this.extractExperienceData(record);
+    const data = this.extractExperienceData(record, previousCount);
 
     let signature = '';
     if (this.signer) {
@@ -281,21 +336,33 @@ export class OnchainChatStorage {
    * Extract the meaningful, system-prompt-free content of a chat exchange.
    * This is the `data` payload of an agent experience.
    */
-  private extractExperienceData(record: ChatHistoryRecord): any {
+  private extractExperienceData(record: ChatHistoryRecord, previousCount = 0): any {
     const request = record.request as any;
     const response = record.response as any;
-    
+
     // Extract only user messages and assistant responses, filter out system prompts
-    let cleanMessages = [];
+    let cleanMessages: Array<{ role: string; content: unknown }> = [];
+    let isCumulative = false;
     if (request?.messages && Array.isArray(request.messages)) {
+      isCumulative = true;
       cleanMessages = request.messages
         .filter((msg: any) => msg.role !== 'system')
         .map((msg: any) => ({
           role: msg.role,
           content: msg.content,
         }));
+    } else if (typeof request?.message === 'string') {
+      // /api/chat sends a single message rather than a conversation array.
+      cleanMessages = [{ role: 'user', content: request.message }];
     }
-    
+
+    // Clients (e.g. SecretAI) resend the whole conversation on every turn. To
+    // avoid re-storing the entire history each time, keep only the delta: the
+    // messages added since the previous experience for this session. Earlier
+    // context is reachable by following header.previousCid. Single-message
+    // requests are not cumulative, so they are stored in full.
+    const newMessages = isCumulative ? cleanMessages.slice(previousCount) : cleanMessages;
+
     // Extract assistant response content
     let assistantResponse = null;
     if (response?.message?.content) {
@@ -313,14 +380,15 @@ export class OnchainChatStorage {
       schemaVersion: '3.0-experience',
       sessionId: record.sessionId || record.metadata?.sessionId || null,
       messageIndex: record.messageIndex ?? null,
-      messages: cleanMessages,
+      // Only the new context for this turn; full history = follow previousCid.
+      messages: newMessages,
       response: assistantResponse,
       model: request?.model || null,
       error: record.error || null,
     };
   }
 
-  private buildObjectKey(record: ChatHistoryRecord): string {
+  private buildObjectKey(record: ChatHistoryRecord, safeSessionId: string): string {
     const eventDate = new Date(record.timestamp);
     const year = String(eventDate.getUTCFullYear());
     const month = String(eventDate.getUTCMonth() + 1).padStart(2, '0');
@@ -329,9 +397,8 @@ export class OnchainChatStorage {
     // Agent identifier (VM_ID) so every record is attributable to this exact agent.
     const agentId = this.options.agentId;
 
-    // Extract session ID from record or metadata
-    const sessionId = record.sessionId || (record.metadata?.sessionId as string) || 'no-session';
-    const safeSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    // safeSessionId is the sanitized session key (same value used for the chain
+    // and the on-chain session key), so filename and chain stay consistent.
 
     // Use message index if available, otherwise use timestamp
     const messageIndex = record.messageIndex !== undefined ? String(record.messageIndex).padStart(4, '0') : null;
