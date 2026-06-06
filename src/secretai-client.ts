@@ -24,7 +24,6 @@ interface SecretAiChatResponse {
  * Resolve the appropriate SecretAI base URL based on the model
  */
 async function resolveSecretAiBaseUrl(model: string): Promise<string> {
-  // Route all gpt-oss variants to the jedi cluster
   const normalizedModel = model.toLowerCase().trim();
   const isGptOss = normalizedModel.startsWith('gpt-oss') || normalizedModel.startsWith('gptoss');
   if (isGptOss) {
