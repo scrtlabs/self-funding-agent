@@ -2,6 +2,39 @@ import crypto from 'crypto';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createAutoDriveApi } from '@autonomys/auto-drive';
 import { NetworkId } from '@autonomys/auto-utils';
+import { AgentMemoryCidManager } from './agent-memory-cid-manager.js';
+
+/**
+ * Minimal signer interface (satisfied by ethers.Wallet / ethers.HDNodeWallet).
+ * Used to cryptographically sign agent experiences before upload.
+ */
+export interface ExperienceSigner {
+  address: string;
+  signMessage(message: string): Promise<string>;
+}
+
+/**
+ * Header describing an agent experience, mirroring the structure used in
+ * autonomys-agents. `previousCid` links this record to the previous one,
+ * forming a linked list of the agent's memory.
+ */
+export interface ExperienceHeader {
+  agentVersion: string;
+  agentId: string;
+  agentAddress?: string;
+  timestamp: string;
+  previousCid?: string;
+}
+
+/**
+ * A signed, self-describing agent experience. This is what gets persisted to
+ * auto drive instead of a raw conversation transcript.
+ */
+export interface AgentExperience {
+  header: ExperienceHeader;
+  data: unknown;
+  signature: string;
+}
 
 export interface ChatHistoryRecord {
   requestId: string;
@@ -30,9 +63,24 @@ interface OnchainChatStorageOptions {
   forcePathStyle: boolean;
   retryCount: number;
   retryBaseDelayMs: number;
+  /**
+   * Stable identifier for the agent that produces these records (defaults to VM_ID).
+   * It is embedded in the auto drive object key and filename so every record is
+   * clearly attributable to this exact agent.
+   */
+  agentId: string;
+  /** Version string recorded in every experience header. */
+  agentVersion: string;
+  /** Local file used to track the head CID of each session's experience chain. */
+  cidStorePath: string;
 }
 
 type Logger = (...args: any[]) => void;
+
+/** Normalize an identifier so it is safe to use inside object keys and filenames. */
+function sanitizeIdentifier(value: string): string {
+  return (value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown-agent';
+}
 
 /**
  * Persists chat transcripts to Autonomys Auto Drive via the S3-compatible API.
@@ -43,9 +91,17 @@ export class OnchainChatStorage {
   private s3Client: S3Client | null = null;
   private s3Bucket: string | null = null;
   private autoDriveApi: any = null;
+  private signer: ExperienceSigner | null = null;
+  private cidManager: AgentMemoryCidManager | null = null;
 
   constructor(options: OnchainChatStorageOptions) {
     this.options = options;
+
+    // Per-session linked-list tracker for chaining experiences on Auto Drive
+    // (head CID per session is tracked in a local JSON file).
+    if (options.enabled) {
+      this.cidManager = new AgentMemoryCidManager(options.cidStorePath);
+    }
     
     // Initialize Auto Drive API if enabled
     if (options.enabled && options.accessKeyId) {
@@ -80,6 +136,17 @@ export class OnchainChatStorage {
       100,
     );
     const enabledFlag = (process.env.AUTONOMYS_CHAT_HISTORY_ENABLED || 'false').toLowerCase() === 'true';
+    const agentId = sanitizeIdentifier(
+      process.env.VM_ID || process.env.FUNDING_AGENT_VM_ID || 'unknown-agent',
+    );
+    const agentVersion = (
+      process.env.AGENT_VERSION ||
+      process.env.npm_package_version ||
+      'unknown'
+    ).trim();
+    const cidStorePath = (
+      process.env.AGENT_MEMORY_CID_PATH || './data/agent-memory-cids.json'
+    ).trim();
 
     const isBucketUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
@@ -136,6 +203,9 @@ export class OnchainChatStorage {
         region,
         keyPrefix: keyPrefix || 'chat-history',
         forcePathStyle: forcePathStyleEnv || !bucket,
+        agentId,
+        agentVersion,
+        cidStorePath,
       });
     }
 
@@ -150,6 +220,9 @@ export class OnchainChatStorage {
       forcePathStyle: forcePathStyleEnv || !bucket,
       retryCount,
       retryBaseDelayMs,
+      agentId,
+      agentVersion,
+      cidStorePath,
     });
   }
 
@@ -157,42 +230,139 @@ export class OnchainChatStorage {
     return this.options.enabled;
   }
 
+  /**
+   * Provide the agent wallet so experiences can be cryptographically signed.
+   * Called once the wallet has been initialized (it is created after this
+   * storage instance, which is built from env at module load).
+   */
+  setSigner(signer: ExperienceSigner | null): void {
+    this.signer = signer;
+    if (signer) {
+      console.log(`[OnchainChatStorage] Experience signer set (${signer.address})`);
+    }
+  }
+
   async store(record: ChatHistoryRecord): Promise<string | null> {
     if (!this.options.enabled) {
       return null;
     }
 
-    const objectKey = this.buildObjectKey(record);
-    
-    // Create lightweight payload - remove system prompts and unnecessary data
-    const lightweightPayload = this.createLightweightPayload(record);
-    const payload = JSON.stringify(lightweightPayload, null, 2);
+    const sessionKey = this.resolveSessionKey(record);
+    const objectKey = this.buildObjectKey(record, sessionKey);
+
+    // Look up the head of this session's experience chain so we can link to it.
+    const previous = this.cidManager ? this.cidManager.getLast(sessionKey) : undefined;
+    const previousCid = previous?.cid;
+    const previousCount = previous?.messageCount ?? 0;
+
+    // Build a signed agent experience (header + data + signature) that stores
+    // only the new context for this turn and points back to the previous record.
+    const experience = await this.buildExperience(record, previousCid, previousCount);
+    const payload = JSON.stringify(experience, null, 2);
 
     const cid = await this.putObjectWithRetry(objectKey, payload);
-    
-    // Store CID in the record
+
+    // Store CID in the record and advance this session's chain head.
     if (cid) {
       record.cid = cid;
+      if (this.cidManager) {
+        // For cumulative-history clients, the new head reflects how many messages
+        // have now been captured; for single-message requests we keep the count
+        // unchanged so each independent request is stored in full.
+        const cumulative = this.cumulativeMessageCount(record);
+        const newCount = cumulative ?? previousCount;
+        this.cidManager.saveLastCid(sessionKey, cid, newCount);
+      }
     }
-    
+
     return objectKey;
   }
 
-  private createLightweightPayload(record: ChatHistoryRecord): any {
+  /**
+   * Stable, sanitized per-session key. The same value is used for the linked-list
+   * chain and the object key/filename, so they stay consistent.
+   */
+  private resolveSessionKey(record: ChatHistoryRecord): string {
+    const raw = record.sessionId || (record.metadata?.sessionId as string) || 'no-session';
+    return raw.replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  /**
+   * Number of cumulative (system-free) messages in the request, or null when the
+   * request is not a cumulative conversation array (e.g. /api/chat single message).
+   */
+  private cumulativeMessageCount(record: ChatHistoryRecord): number | null {
+    const request = record.request as any;
+    if (!Array.isArray(request?.messages)) {
+      return null;
+    }
+    return request.messages.filter((msg: any) => msg.role !== 'system').length;
+  }
+
+  /**
+   * Wrap the extracted experience data in a signed envelope:
+   *   { header: { agentVersion, agentId, agentAddress, timestamp }, data, signature }
+   * The signature is produced by the agent wallet over JSON.stringify({ header, data }),
+   * mirroring the experience format used in autonomys-agents.
+   */
+  private async buildExperience(
+    record: ChatHistoryRecord,
+    previousCid?: string,
+    previousCount = 0,
+  ): Promise<AgentExperience> {
+    const header: ExperienceHeader = {
+      agentVersion: this.options.agentVersion,
+      agentId: this.options.agentId,
+      agentAddress: this.signer?.address,
+      timestamp: record.timestamp,
+      previousCid,
+    };
+
+    const data = this.extractExperienceData(record, previousCount);
+
+    let signature = '';
+    if (this.signer) {
+      try {
+        signature = await this.signer.signMessage(JSON.stringify({ header, data }));
+      } catch (error) {
+        console.warn('[OnchainChatStorage] Failed to sign experience:', error);
+      }
+    }
+
+    return { header, data, signature };
+  }
+
+  /**
+   * Extract the meaningful, system-prompt-free content of a chat exchange.
+   * This is the `data` payload of an agent experience.
+   */
+  private extractExperienceData(record: ChatHistoryRecord, previousCount = 0): any {
     const request = record.request as any;
     const response = record.response as any;
-    
+
     // Extract only user messages and assistant responses, filter out system prompts
-    let cleanMessages = [];
+    let cleanMessages: Array<{ role: string; content: unknown }> = [];
+    let isCumulative = false;
     if (request?.messages && Array.isArray(request.messages)) {
+      isCumulative = true;
       cleanMessages = request.messages
         .filter((msg: any) => msg.role !== 'system')
         .map((msg: any) => ({
           role: msg.role,
           content: msg.content,
         }));
+    } else if (typeof request?.message === 'string') {
+      // /api/chat sends a single message rather than a conversation array.
+      cleanMessages = [{ role: 'user', content: request.message }];
     }
-    
+
+    // Clients (e.g. SecretAI) resend the whole conversation on every turn. To
+    // avoid re-storing the entire history each time, keep only the delta: the
+    // messages added since the previous experience for this session. Earlier
+    // context is reachable by following header.previousCid. Single-message
+    // requests are not cumulative, so they are stored in full.
+    const newMessages = isCumulative ? cleanMessages.slice(previousCount) : cleanMessages;
+
     // Extract assistant response content
     let assistantResponse = null;
     if (response?.message?.content) {
@@ -207,40 +377,45 @@ export class OnchainChatStorage {
     }
     
     return {
-      version: '2.0',
+      schemaVersion: '3.0-experience',
       sessionId: record.sessionId || record.metadata?.sessionId || null,
-      messageIndex: record.messageIndex || null,
-      timestamp: record.timestamp,
-      messages: cleanMessages,
+      messageIndex: record.messageIndex ?? null,
+      // Only the new context for this turn; full history = follow previousCid.
+      messages: newMessages,
       response: assistantResponse,
       model: request?.model || null,
       error: record.error || null,
     };
   }
 
-  private buildObjectKey(record: ChatHistoryRecord): string {
+  private buildObjectKey(record: ChatHistoryRecord, safeSessionId: string): string {
     const eventDate = new Date(record.timestamp);
     const year = String(eventDate.getUTCFullYear());
     const month = String(eventDate.getUTCMonth() + 1).padStart(2, '0');
     const day = String(eventDate.getUTCDate()).padStart(2, '0');
-    
-    // Extract session ID from record or metadata
-    const sessionId = record.sessionId || (record.metadata?.sessionId as string) || 'no-session';
-    const safeSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    
+
+    // Agent identifier (VM_ID) so every record is attributable to this exact agent.
+    const agentId = this.options.agentId;
+
+    // safeSessionId is the sanitized session key (same value used for the chain
+    // and the on-chain session key), so filename and chain stay consistent.
+
     // Use message index if available, otherwise use timestamp
     const messageIndex = record.messageIndex !== undefined ? String(record.messageIndex).padStart(4, '0') : null;
-    
-    // Build filename: sessionId-messageIndex-timestamp.json or sessionId-timestamp-requestId.json
+
+    // Build filename with the agent id prefixed so the name itself identifies the producer:
+    //   agentId-sessionId-messageIndex-timestamp.json
+    //   agentId-sessionId-timestamp-requestId.json
     let fileName: string;
     if (messageIndex !== null) {
-      fileName = `${safeSessionId}-${messageIndex}-${eventDate.getTime()}.json`;
+      fileName = `${agentId}-${safeSessionId}-${messageIndex}-${eventDate.getTime()}.json`;
     } else {
       const safeRequestId = (record.requestId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, '_');
-      fileName = `${safeSessionId}-${eventDate.getTime()}-${safeRequestId}.json`;
+      fileName = `${agentId}-${safeSessionId}-${eventDate.getTime()}-${safeRequestId}.json`;
     }
 
-    return [this.options.keyPrefix, year, month, day, fileName].filter(Boolean).join('/');
+    // Also namespace the path by agent id so records are grouped per agent.
+    return [this.options.keyPrefix, agentId, year, month, day, fileName].filter(Boolean).join('/');
   }
 
   private async putObjectWithRetry(objectKey: string, payload: string): Promise<string | null> {
@@ -413,7 +588,11 @@ export class OnchainChatStorage {
           continue; // Skip non-history files
         }
         
-        const [, sessionId, messageIndexStr, timestampStr] = match;
+        const [, head, messageIndexStr, timestampStr] = match;
+        // Filenames are now prefixed with the agent id (agentId-sessionId-...).
+        // Strip it back off to recover the original session id for display.
+        const agentPrefix = `${this.options.agentId}-`;
+        const sessionId = head.startsWith(agentPrefix) ? head.slice(agentPrefix.length) : head;
         const messageIndex = parseInt(messageIndexStr, 10);
         const timestamp = new Date(parseInt(timestampStr, 10)).toISOString();
         

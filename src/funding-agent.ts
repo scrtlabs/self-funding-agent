@@ -1074,7 +1074,10 @@ async function startAgent(): Promise<void> {
     
     // Initialize wallet (create or restore)
     wallet = await walletManager.initialize();
-    
+
+    // Allow the chat-history storage to cryptographically sign agent experiences.
+    chatHistoryStorage.setSigner(wallet);
+
     console.log('');
     console.log('💰 Wallet Address:', wallet.address);
     console.log('🆔 VM ID:', config.vmId || '❌ NOT CONFIGURED - REQUIRED!');
