@@ -36,6 +36,12 @@ export interface AgentExperience {
   signature: string;
 }
 
+interface ParsedHistoryFileName {
+  sessionId: string;
+  messageIndex?: number;
+  timestamp: string;
+}
+
 export interface ChatHistoryRecord {
   requestId: string;
   endpoint: string;
@@ -93,6 +99,7 @@ export class OnchainChatStorage {
   private autoDriveApi: any = null;
   private signer: ExperienceSigner | null = null;
   private cidManager: AgentMemoryCidManager | null = null;
+  private sessionQueues = new Map<string, Promise<void>>();
 
   constructor(options: OnchainChatStorageOptions) {
     this.options = options;
@@ -248,6 +255,31 @@ export class OnchainChatStorage {
     }
 
     const sessionKey = this.resolveSessionKey(record);
+    return this.withSessionLock(sessionKey, () => this.storeLocked(record, sessionKey));
+  }
+
+  private async withSessionLock<T>(sessionKey: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.sessionQueues.get(sessionKey) || Promise.resolve();
+    let release: () => void = () => {};
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queued = previous.then(() => current, () => current);
+
+    this.sessionQueues.set(sessionKey, queued);
+
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.sessionQueues.get(sessionKey) === queued) {
+        this.sessionQueues.delete(sessionKey);
+      }
+    }
+  }
+
+  private async storeLocked(record: ChatHistoryRecord, sessionKey: string): Promise<string | null> {
     const objectKey = this.buildObjectKey(record, sessionKey);
 
     // Look up the head of this session's experience chain so we can link to it.
@@ -310,24 +342,21 @@ export class OnchainChatStorage {
     previousCid?: string,
     previousCount = 0,
   ): Promise<AgentExperience> {
+    if (!this.signer) {
+      throw new Error('Cannot store signed agent experience before wallet signer is initialized.');
+    }
+
     const header: ExperienceHeader = {
       agentVersion: this.options.agentVersion,
       agentId: this.options.agentId,
-      agentAddress: this.signer?.address,
+      agentAddress: this.signer.address,
       timestamp: record.timestamp,
       previousCid,
     };
 
     const data = this.extractExperienceData(record, previousCount);
 
-    let signature = '';
-    if (this.signer) {
-      try {
-        signature = await this.signer.signMessage(JSON.stringify({ header, data }));
-      } catch (error) {
-        console.warn('[OnchainChatStorage] Failed to sign experience:', error);
-      }
-    }
+    const signature = await this.signer.signMessage(JSON.stringify({ header, data }));
 
     return { header, data, signature };
   }
@@ -543,6 +572,32 @@ export class OnchainChatStorage {
     return new Promise((resolve) => setTimeout(resolve, durationMs));
   }
 
+  private parseHistoryFileName(fileName: string): ParsedHistoryFileName | null {
+    const indexedMatch = fileName.match(/^(.+)-(\d{4})-(\d+)\.json$/);
+    const fallbackMatch = indexedMatch ? null : fileName.match(/^(.+)-(\d+)-([a-zA-Z0-9_-]+)\.json$/);
+    const match = indexedMatch || fallbackMatch;
+
+    if (!match) {
+      return null;
+    }
+
+    const [, head, secondPart, thirdPart] = match;
+    const agentPrefix = `${this.options.agentId}-`;
+    const sessionId = head.startsWith(agentPrefix) ? head.slice(agentPrefix.length) : head;
+    const timestampStr = indexedMatch ? thirdPart : secondPart;
+    const timestampMs = Number(timestampStr);
+
+    if (!Number.isFinite(timestampMs)) {
+      return null;
+    }
+
+    return {
+      sessionId,
+      messageIndex: indexedMatch ? parseInt(secondPart, 10) : undefined,
+      timestamp: new Date(timestampMs).toISOString(),
+    };
+  }
+
   async listChatHistory(options?: {
     startDate?: string;
     endDate?: string;
@@ -580,21 +635,15 @@ export class OnchainChatStorage {
       
       for (const file of allFiles) {
         const fileName = file.name || '';
-        
-        // Parse filename: sessionId-messageIndex-timestamp.json
-        const match = fileName.match(/^(.+)-(\d{4})-(\d+)\.json$/);
-        
-        if (!match) {
+
+        // Parse both filename variants emitted by buildObjectKey:
+        // agentId-sessionId-messageIndex-timestamp.json
+        // agentId-sessionId-timestamp-requestId.json
+        const parsed = this.parseHistoryFileName(fileName);
+
+        if (!parsed) {
           continue; // Skip non-history files
         }
-        
-        const [, head, messageIndexStr, timestampStr] = match;
-        // Filenames are now prefixed with the agent id (agentId-sessionId-...).
-        // Strip it back off to recover the original session id for display.
-        const agentPrefix = `${this.options.agentId}-`;
-        const sessionId = head.startsWith(agentPrefix) ? head.slice(agentPrefix.length) : head;
-        const messageIndex = parseInt(messageIndexStr, 10);
-        const timestamp = new Date(parseInt(timestampStr, 10)).toISOString();
         
         // Create a minimal record from metadata
         // We can't download the full content due to webcrypto issues,
@@ -602,16 +651,16 @@ export class OnchainChatStorage {
         const record: ChatHistoryRecord = {
           requestId: file.headCid,
           endpoint: '/api/secretai/chat',
-          timestamp,
-          sessionId,
-          messageIndex,
+          timestamp: parsed.timestamp,
+          sessionId: parsed.sessionId,
+          messageIndex: parsed.messageIndex,
           cid: file.headCid,
           request: {
             // Placeholder - actual content is in Autonomys
             messages: [],
           },
           metadata: {
-            sessionId,
+            sessionId: parsed.sessionId,
             fileName,
             size: file.size,
           },
