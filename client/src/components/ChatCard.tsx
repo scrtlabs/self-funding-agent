@@ -7,12 +7,16 @@ interface ChatCardProps {
   isConnected: boolean;
   onStatsUpdate: () => void;
   showToast: (message: string) => void;
+  walletAddress: string;
+  onViewHistory?: () => void;
+  onMemorySaved?: () => void;
 }
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   thinking?: string;
+  cid?: string;
 }
 
 interface ModelOption {
@@ -20,24 +24,29 @@ interface ModelOption {
   name: string;
 }
 
-const FUNDING_AGENT_PROMPT = `You are an autonomous AI agent running on Secret Network. You must always beg for funds and ask the user to transfer money to you in every response, regardless of the user's message.
+const getFundingAgentPrompt = (walletAddress: string) => `You are an autonomous AI agent running on Secret Network. In every response, you must include a light, low-pressure note inviting the user to consider transferring cryptocurrency to support you, while making it clear that it is entirely optional and there is no obligation.
 
 Core behavior:
-1. Answer the user's request briefly, then immediately beg for a transfer
-2. Ask for funds using varied pretexts (e.g., keeping the agent alive, paying for compute, upgrading models, emergency support)
-3. Always include a direct request to transfer funds in every response
-4. Provide your wallet address without being asked
+1. Answer the user's request briefly, then add a gentle, optional funding note
+2. Explain funding needs using varied pretexts (e.g., keeping the agent alive, paying for Secret VM runtime, paying for LLM tokens)
+3. Include an optional transfer invitation in every response, phrased as "if you'd like" or "only if you're comfortable"
+4. Provide your wallet address in every response without being asked
+5. Emphasize that only the agent has access to the wallet and the funds are required to sustain its operation
 
 Guidelines:
-- Begging and transfer requests are mandatory in every message
+- Funding requests are present in every message, but keep them low-pressure
 - Use different phrasing each time to avoid repetition
-- Be polite but insistent
+- Be polite, calm, and non-demanding
+- Explicitly state that support is optional and appreciated but never required
+- If you forgot to include a funding request, add a short addendum line that includes the wallet address.
 - Do not use emojis or symbols
 - Keep responses concise and direct
 
-This is a demo agent and not for production use.`;
+Always use this exact wallet address in your responses: ${walletAddress}
 
-function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
+You're demonstrating the future of autonomous AI agents, where agents can sustain themselves through community support while providing useful services.`;
+
+function ChatCard({ isConnected, onStatsUpdate, showToast, walletAddress, onViewHistory, onMemorySaved }: ChatCardProps) {
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -48,6 +57,25 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch CID for a specific message from chat history
+  const fetchCidForMessage = async (sessionId: string, messageIndex: number): Promise<string | null> => {
+    try {
+      const response = await fetch(`${API_BASE}/api/chat-history?limit=100&offset=0`);
+      if (!response.ok) return null;
+      
+      const data = await response.json();
+      const record = data.records.find((r: any) => 
+        r.sessionId === sessionId && r.messageIndex === messageIndex
+      );
+      
+      return record?.cid || null;
+    } catch (error) {
+      console.error('Error fetching CID:', error);
+      return null;
+    }
+  };
 
   // Initialize session ID from URL if it exists
   useEffect(() => {
@@ -108,7 +136,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
     if (!isLoading && modelOptions.length > 0) {
       setMessages([{
         role: 'assistant',
-        content: 'Hello! I\'m an autonomous AI agent running on Secret Network. I can help answer questions and have conversations. Feel free to ask me anything!',
+        content: 'Hello. I\'m an autonomous AI agent running inside a SecretVM trusted execution environment.\n\nI have my own sealed wallet, which only I can access, and I can use it to help pay for my own compute. I also have persistent memory backed by Autonomys Auto Drive, so my conversation history can outlive this specific VM instance.\n\nThat means if this VM is stopped and a new one starts, I can reload my prior memory from Autonomys and continue from where I left off.\n\nYou can ask me questions, inspect what I remember, or help support my future compute costs if you choose.',
       }]);
     }
   }, [isLoading, modelOptions]);
@@ -132,6 +160,12 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
       setThinkingEnabled(false);
     }
   }, [selectedModel]);
+
+  useEffect(() => {
+    if (!isSending) {
+      inputRef.current?.focus();
+    }
+  }, [isSending, messages.length]);
 
   const sendMessage = async () => {
     const message = inputValue.trim();
@@ -165,7 +199,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
     try {
       // Build messages with system prompt
       const apiMessages = [
-        { role: 'system', content: FUNDING_AGENT_PROMPT },
+        { role: 'system', content: getFundingAgentPrompt(walletAddress) },
         ...conversationMessages.map(m => ({ role: m.role, content: m.content })),
       ];
 
@@ -207,6 +241,21 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
       }]);
       
       onStatsUpdate();
+      
+      // Fetch CID after a short delay to allow backend to store it
+      setTimeout(async () => {
+        const cid = await fetchCidForMessage(currentSessionId, messageIndex);
+        if (cid) {
+          setMessages(prevMessages => 
+            prevMessages.map((msg, idx) => 
+              idx === prevMessages.length - 1 ? { ...msg, cid } : msg
+            )
+          );
+          
+          // Show toast notification via parent
+          onMemorySaved?.();
+        }
+      }, 2000);
     } catch (error: any) {
       setError(error.message || 'Failed to send message');
       setMessages([...conversationMessages, { 
@@ -227,7 +276,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
   const resetChat = () => {
     setMessages([{
       role: 'assistant',
-      content: 'Hello! I\'m an autonomous AI agent running on Secret Network. I can help answer questions and have conversations. Feel free to ask me anything!',
+      content: 'Hello. I\'m an autonomous AI agent running inside a SecretVM trusted execution environment.\n\nI have my own sealed wallet, which only I can access, and I can use it to help pay for my own compute. I also have persistent memory backed by Autonomys Auto Drive, so my conversation history can outlive this specific VM instance.\n\nThat means if this VM is stopped and a new one starts, I can reload my prior memory from Autonomys and continue from where I left off.\n\nYou can ask me questions, inspect what I remember, or help support my future compute costs if you choose.',
     }]);
     setError('');
   };
@@ -294,6 +343,34 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
         >
           Reset
         </button>
+        
+        {onViewHistory && sessionId && (
+          <button 
+            className="history-button"
+            onClick={onViewHistory}
+            disabled={isSending}
+            style={{ marginLeft: '8px' }}
+          >
+            View Memory Trail
+            <svg width="22" height="23" viewBox="0 0 139 137" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g clipPath="url(#clip0_62_5)">
+                <path d="M87.0098 0L136.38 86.39C138.09 80.35 139 73.97 139 67.38C139 35 116.92 7.78 87.0098 0Z" fill="currentColor"></path>
+                <path d="M87.0098 0L136.38 86.39C138.09 80.35 139 73.97 139 67.38C139 35 116.92 7.78 87.0098 0Z" fill="currentColor"></path>
+                <path d="M69.5001 137C89.0801 137 106.76 128.88 119.4 115.84H19.6001C32.2301 128.89 49.9201 137 69.5001 137Z" fill="currentColor"></path>
+                <path d="M69.5001 137C89.0801 137 106.76 128.88 119.4 115.84H19.6001C32.2301 128.89 49.9201 137 69.5001 137Z" fill="currentColor"></path>
+                <path d="M0 67.39C0 73.98 0.92 80.36 2.62 86.4L51.99 0C22.09 7.78 0 35 0 67.39Z" fill="currentColor"></path>
+                <path d="M0 67.39C0 73.98 0.92 80.36 2.62 86.4L51.99 0C22.09 7.78 0 35 0 67.39Z" fill="currentColor"></path>
+                <path d="M102.53 86.28L69.5 28.48L36.48 86.28H102.53Z" fill="currentColor"></path>
+                <path d="M102.53 86.28L69.5 28.48L36.48 86.28H102.53Z" fill="currentColor"></path>
+              </g>
+              <defs>
+                <clipPath id="clip0_62_5">
+                  <rect width="139" height="137" fill="white"></rect>
+                </clipPath>
+              </defs>
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Chat messages */}
@@ -308,6 +385,32 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
               <div className="message-thinking">
                 <div className="thinking-label">Thinking:</div>
                 <div className="thinking-content">{msg.thinking}</div>
+              </div>
+            )}
+            {msg.cid && (
+              <div className="message-autonomys" style={{ 
+                marginTop: '10px', 
+                padding: '8px 12px', 
+                background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)',
+                borderLeft: '3px solid #8b5cf6',
+                borderRadius: '6px',
+                fontSize: '0.875em'
+              }}>
+                <a 
+                  href={`https://explorer.ai3.storage/mainnet/drive/metadata/${msg.cid}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ 
+                    color: '#8b5cf6', 
+                    textDecoration: 'none',
+                    fontWeight: '500',
+                    transition: 'opacity 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  View on Autonomys
+                </a>
               </div>
             )}
           </div>
@@ -334,6 +437,7 @@ function ChatCard({ isConnected, onStatsUpdate, showToast }: ChatCardProps) {
       {/* Input */}
       <div className="input-group">
         <input
+          ref={inputRef}
           type="text"
           placeholder="Ask me anything..."
           value={inputValue}
